@@ -11,7 +11,7 @@ const int RAMP_DELAY  = 50;    // ms
 const int MIN_SPEED   = MAX_SPEED * 2 / 10;  // ~20%
 
 // -------- dip behavior --------
-const int DIP_SPEED = MAX_SPEED * 4 / 9;  // ~44%
+const int DIP_SPEED = MAX_SPEED * 4 / 9;  // ~40%
 const unsigned long DIP_TIME = 2500;     // ms per dip
 
 // -------- forward declaration --------
@@ -111,8 +111,8 @@ void go(bool forward,
 void theLongRun() {
   Serial.println("THE LONG RUN (seasoning)");
 
-  const unsigned long ONE_HOUR = 60UL * 60UL * 1000UL;
-  const int SEASON_SPEED = MAX_SPEED * 9 / 10; // ~70%
+  const unsigned long ONE_HOUR = 60UL * 60UL * 1000UL * 4;
+  const int SEASON_SPEED = MAX_SPEED * 8 / 10; // ~80%
 
   // Forward 45 min
   setDirection(true);
@@ -141,8 +141,8 @@ void circleOfStops() {
 void longTrainRunning() {
   Serial.println("Long Train Running");
   for (int i = 0; i < 3; i++) {
-    go(true,  150, 20000, 6000, 2);
-    go(false, 150, 20000, 6000, 2);
+    go(true,  MAX_SPEED, 20000, 6000, 2);
+    go(false, MAX_SPEED, 20000, 6000, 2);
   }
 }
 
