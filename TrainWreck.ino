@@ -8,10 +8,9 @@ const int stbyPin  = 6;   // STBY  (enable)
 const int MAX_SPEED   = 130;   // safer ceiling for 12V
 const int RAMP_STEP   = 1;
 const int RAMP_DELAY  = 60;    // ms
-const int MIN_SPEED   = 0;
+const int MIN_SPEED   = 10;
 
 // -------- dip behavior --------
-const int DIP_SPEED = MAX_SPEED * 6 / 9;  // ~44.44%
 const unsigned long DIP_TIME = 4500;     // ms per dip
 
 // -------- forward declaration --------
@@ -94,7 +93,8 @@ void go(bool forward,
 
     for (int i = 0; i < dipCount; i++) {
       delay(slice);
-      rampSpeed(DIP_SPEED);
+      int dipSpeed = speed * 4 / 10; // 40% of current speed
+      rampSpeed(dipSpeed);
       delay(DIP_TIME);
       rampSpeed(speed);
     }
@@ -111,36 +111,31 @@ void go(bool forward,
 void theLongRun() {
   Serial.println("THE LONG RUN (seasoning)");
 
-  const unsigned long HOURS = 20UL * 60UL * 1000UL; // 20 mins
+  const unsigned long MINUTES = 20UL * 60UL * 1000UL; // 20 mins
   const int SEASON_SPEED = MAX_SPEED * 8 / 10; // ~80%
-
-  // Forward 
-  setDirection(false);
-  rampSpeed(SEASON_SPEED);
-  delay(HOURS / 2);
 
   // Reverse 
   setDirection(false);
   rampSpeed(SEASON_SPEED);
-  delay(HOURS / 2);
+  delay(MINUTES / 2);
 
-unsigned long t0 = millis();
-while (millis() - t0 < (HOURS / 2)) {
-  Serial.print("LONGRUN PWM SHOULD BE ");
-  Serial.println(SEASON_SPEED);
-  delay(60000); // once per minute
-}
+  // Forward 
+  setDirection(true);
+  rampSpeed(SEASON_SPEED);
+  delay(MINUTES / 2);
+
   rampSpeed(0);
   Serial.println("THE LONG RUN COMPLETE");
 }
 
 void circleOfStops() {
   Serial.println("Circle Of Stops");
-  bool dir = true;
+  bool direction = true;
 
+  int speed = random(80, MAX_SPEED);
   for (int i = 0; i < 6; i++) {
-    go(dir, MAX_SPEED, 6000, 5000, 1);  // one slow dip
-    dir = !dir;
+    go(direction, speed, 6000, 5000, 1);  // one slow dip
+    direction = !direction;
   }
 }
 
@@ -181,14 +176,33 @@ void setup() {
 }
 
 // -------- loop --------
+static bool didLongRun = false;
+
 void loop() {
   Serial.println("LOOP START");
 
-  //theLongRun();
-  circleOfStops();
-  longTrainRunning();
-  gentleWander();
+  if (!didLongRun) {
+    Serial.println("STARTING LONG RUN");
+    theLongRun();
+    didLongRun = true;
+  }
 
-  Serial.println("LOOP END");
+  Serial.println("CYCLES BEGIN");
+
+  for (int i = 0; i < 5; i++) {
+    Serial.print("CYCLE ");
+    Serial.println(i + 1);
+
+    circleOfStops();
+    longTrainRunning();
+    gentleWander();
+  }
+
+  Serial.println("CYCLES COMPLETE — RESTING");
+  
+  const unsigned long LONG_REST = 20UL * 60UL * 1000UL; // 20 minutes
+  delay(LONG_REST);
+
+  Serial.println();
 }
 
