@@ -6,13 +6,13 @@ const int stbyPin  = 6;   // STBY  (enable)
 
 // -------- tuning --------
 const int MAX_SPEED   = 130;   // safer ceiling for 12V
-const int RAMP_STEP   = 2;
-const int RAMP_DELAY  = 50;    // ms
-const int MIN_SPEED   = MAX_SPEED * 2 / 10;  // ~20%
+const int RAMP_STEP   = 1;
+const int RAMP_DELAY  = 60;    // ms
+const int MIN_SPEED   = 0;
 
 // -------- dip behavior --------
-const int DIP_SPEED = MAX_SPEED * 4 / 9;  // ~40%
-const unsigned long DIP_TIME = 2500;     // ms per dip
+const int DIP_SPEED = MAX_SPEED * 6 / 9;  // ~44.44%
+const unsigned long DIP_TIME = 4500;     // ms per dip
 
 // -------- forward declaration --------
 void go(bool forward,
@@ -54,10 +54,10 @@ void rampSpeed(int target) {
     current += (current < target) ? step : -step;
 
     // clamp to target
-    if ((current < target && current > target) ||
-        (current > target && current < target)) {
-      current = target;
-    }
+if ((start < target && current > target) ||
+    (start > target && current < target)) {
+  current = target;
+}
 
     analogWrite(speedPin, current);
     delay(RAMP_DELAY);
@@ -111,19 +111,25 @@ void go(bool forward,
 void theLongRun() {
   Serial.println("THE LONG RUN (seasoning)");
 
-  const unsigned long ONE_HOUR = 60UL * 60UL * 1000UL * 4;
+  const unsigned long HOURS = 20UL * 60UL * 1000UL; // 20 mins
   const int SEASON_SPEED = MAX_SPEED * 8 / 10; // ~80%
 
-  // Forward 45 min
-  setDirection(true);
-  rampSpeed(SEASON_SPEED);
-  delay(ONE_HOUR / 2);
-
-  // Reverse 45 min
+  // Forward 
   setDirection(false);
   rampSpeed(SEASON_SPEED);
-  delay(ONE_HOUR / 2);
+  delay(HOURS / 2);
 
+  // Reverse 
+  setDirection(false);
+  rampSpeed(SEASON_SPEED);
+  delay(HOURS / 2);
+
+unsigned long t0 = millis();
+while (millis() - t0 < (HOURS / 2)) {
+  Serial.print("LONGRUN PWM SHOULD BE ");
+  Serial.println(SEASON_SPEED);
+  delay(60000); // once per minute
+}
   rampSpeed(0);
   Serial.println("THE LONG RUN COMPLETE");
 }
@@ -178,7 +184,7 @@ void setup() {
 void loop() {
   Serial.println("LOOP START");
 
-  theLongRun();
+  //theLongRun();
   circleOfStops();
   longTrainRunning();
   gentleWander();
