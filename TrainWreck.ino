@@ -5,13 +5,13 @@ const int dirPin2  = 7;   // AIN2  (direction)
 const int stbyPin  = 6;   // STBY  (enable)
 
 // -------- tuning --------
-const int MAX_SPEED   = 130;   // safer ceiling for 12V
+const int MAX_SPEED   = 130;   // about 6v ceiling for 12V
 const int RAMP_STEP   = 1;
 const int RAMP_DELAY  = 60;    // ms
-const int MIN_SPEED   = 10;
+const int MIN_SPEED   = 40;
 
 // -------- dip behavior --------
-const unsigned long DIP_TIME = 4500;     // ms per dip
+const unsigned long DIP_TIME = 7500;     // ms per dip
 
 // -------- forward declaration --------
 void go(bool forward,
@@ -33,6 +33,8 @@ void setDirection(bool forward) {
 
 void rampSpeed(int target) {
   static int current = 0;
+
+  // Ensure the target is within the valid range (MIN_SPEED to MAX_SPEED)
   target = constrain(target, target == 0 ? 0 : MIN_SPEED, MAX_SPEED);
 
   if (target == current) return;
@@ -50,25 +52,40 @@ void rampSpeed(int target) {
     // S-curve: gentle start, faster middle, gentle end
     int step = max(1, (int)(RAMP_STEP * (0.5 + 1.5 * phase * (1 - phase))));
 
+    // Adjust the current value to move towards the target
     current += (current < target) ? step : -step;
 
-    // clamp to target
-if ((start < target && current > target) ||
-    (start > target && current < target)) {
-  current = target;
-}
+    // Ensure current doesn't overshoot the target
+    if ((start < target && current > target) ||
+        (start > target && current < target)) {
+      current = target;
+    }
+
+    // Smooth ramping down to zero
+    if (target == 0) {
+      // Allow deceleration to zero, but not below MIN_SPEED unless zero
+      current = max(current, 0);
+    } else {
+      // Ensure current doesn't fall below MIN_SPEED when moving above zero
+      current = max(current, MIN_SPEED);
+    }
 
     analogWrite(speedPin, current);
     delay(RAMP_DELAY);
   }
 
-  if (current == 0) Serial.println("STOPPED");
-  else if (current == MAX_SPEED) Serial.println("MAX SPEED");
-  else {
+  // Print the final speed state
+  if (current == 0) {
+    Serial.println("STOPPED");
+  } else if (current == MAX_SPEED) {
+    Serial.print("MAX SPEED ");
+    Serial.println(current);
+  } else {
     Serial.print("AT SPEED ");
     Serial.println(current);
   }
 }
+
 // -------- core primitive --------
 void go(bool forward,
         int speed,
@@ -93,7 +110,7 @@ void go(bool forward,
 
     for (int i = 0; i < dipCount; i++) {
       delay(slice);
-      int dipSpeed = speed * 4 / 10; // 40% of current speed
+      int dipSpeed = speed * 6 / 10; // % of current speed
       rampSpeed(dipSpeed);
       delay(DIP_TIME);
       rampSpeed(speed);
@@ -133,6 +150,7 @@ void circleOfStops() {
   bool direction = true;
 
   int speed = random(80, MAX_SPEED);
+  //int speed = MAX_SPEED;
   for (int i = 0; i < 6; i++) {
     go(direction, speed, 6000, 5000, 1);  // one slow dip
     direction = !direction;
@@ -180,14 +198,6 @@ static bool didLongRun = false;
 
 void loop() {
   Serial.println("LOOP START");
-
-  if (!didLongRun) {
-    Serial.println("STARTING LONG RUN");
-    theLongRun();
-    didLongRun = true;
-  }
-
-  Serial.println("CYCLES BEGIN");
 
   for (int i = 0; i < 5; i++) {
     Serial.print("CYCLE ");
