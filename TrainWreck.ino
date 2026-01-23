@@ -5,13 +5,15 @@ const int dirPin2  = 7;   // AIN2  (direction)
 const int stbyPin  = 6;   // STBY  (enable)
 
 // -------- tuning --------
-const int MAX_SPEED   = 130;   // about 6v ceiling for 12V
-const int RAMP_STEP   = 1;
-const int RAMP_DELAY  = 60;    // ms
-const int MIN_SPEED   = 40;
+const int MAX_SPEED   = 130;   // safer ceiling for 12V
+const int RAMP_STEP   = 2;
+const int RAMP_DELAY  = 50;    // ms
+const int MIN_SPEED   = 10;  
+const float MAX_MPH = 63.0;   // calibrate once, then trust it
 
 // -------- dip behavior --------
-const unsigned long DIP_TIME = 7500;     // ms per dip
+const int DIP_SPEED = MAX_SPEED * 4 / 9;  // ~44%
+const unsigned long DIP_TIME = 2500;     // ms per dip
 
 // -------- forward declaration --------
 void go(bool forward,
@@ -33,8 +35,6 @@ void setDirection(bool forward) {
 
 void rampSpeed(int target) {
   static int current = 0;
-
-  // Ensure the target is within the valid range (MIN_SPEED to MAX_SPEED)
   target = constrain(target, target == 0 ? 0 : MIN_SPEED, MAX_SPEED);
 
   if (target == current) return;
@@ -43,7 +43,8 @@ void rampSpeed(int target) {
   int delta = abs(target - start);
 
   Serial.print(target > current ? "S-RAMP UP → " : "S-RAMP DOWN → ");
-  Serial.println(target);
+    Serial.print(speedToMph(target), 1);
+    Serial.println(" MPH");
 
   while (current != target) {
     int progressed = abs(current - start);
@@ -52,40 +53,30 @@ void rampSpeed(int target) {
     // S-curve: gentle start, faster middle, gentle end
     int step = max(1, (int)(RAMP_STEP * (0.5 + 1.5 * phase * (1 - phase))));
 
-    // Adjust the current value to move towards the target
     current += (current < target) ? step : -step;
 
-    // Ensure current doesn't overshoot the target
-    if ((start < target && current > target) ||
-        (start > target && current < target)) {
+    // clamp to target
+    if ((current < target && current > target) ||
+        (current > target && current < target)) {
       current = target;
-    }
-
-    // Smooth ramping down to zero
-    if (target == 0) {
-      // Allow deceleration to zero, but not below MIN_SPEED unless zero
-      current = max(current, 0);
-    } else {
-      // Ensure current doesn't fall below MIN_SPEED when moving above zero
-      current = max(current, MIN_SPEED);
     }
 
     analogWrite(speedPin, current);
     delay(RAMP_DELAY);
   }
 
-  // Print the final speed state
-  if (current == 0) {
-    Serial.println("STOPPED");
-  } else if (current == MAX_SPEED) {
+  if (current == 0) Serial.println("STOPPED");
+  else if (current == MAX_SPEED) {
     Serial.print("MAX SPEED ");
-    Serial.println(current);
-  } else {
+    Serial.print(speedToMph(current), 1);
+    Serial.println(" MPH");
+  }
+  else {
     Serial.print("AT SPEED ");
-    Serial.println(current);
+    Serial.print(speedToMph(current), 1);
+    Serial.println(" MPH");
   }
 }
-
 // -------- core primitive --------
 void go(bool forward,
         int speed,
@@ -97,10 +88,11 @@ void go(bool forward,
 
   Serial.print("GO ");
   Serial.print(forward ? "Forward" : "Reverse");
-  Serial.print(" | speed ");
-  Serial.print(speed);
   Serial.print(" | dips ");
-  Serial.println(dipCount);
+  Serial.print(dipCount);
+  Serial.print(" | speed ");
+  Serial.print(speedToMph(speed), 1);
+  Serial.println(" MPH");
 
   setDirection(forward);
   rampSpeed(speed);
@@ -110,8 +102,7 @@ void go(bool forward,
 
     for (int i = 0; i < dipCount; i++) {
       delay(slice);
-      int dipSpeed = speed * 6 / 10; // % of current speed
-      rampSpeed(dipSpeed);
+      rampSpeed(DIP_SPEED);
       delay(DIP_TIME);
       rampSpeed(speed);
     }
@@ -124,22 +115,27 @@ void go(bool forward,
   delay(pauseTime);
 }
 
+float speedToMph(int pwm) {
+  pwm = constrain(pwm, 0, MAX_SPEED);
+  return (pwm / (float)MAX_SPEED) * MAX_MPH;
+}
+
 // -------- behaviors --------
 void theLongRun() {
   Serial.println("THE LONG RUN (seasoning)");
 
-  const unsigned long MINUTES = 20UL * 60UL * 1000UL; // 20 mins
-  const int SEASON_SPEED = MAX_SPEED * 8 / 10; // ~80%
+  const unsigned long ONE_HOUR = 60UL * 60UL * 1000UL;
+  const int SEASON_SPEED = MAX_SPEED * 9 / 10; // ~70%
 
-  // Reverse 
-  setDirection(false);
-  rampSpeed(SEASON_SPEED);
-  delay(MINUTES / 2);
-
-  // Forward 
+  // Forward 45 min
   setDirection(true);
   rampSpeed(SEASON_SPEED);
-  delay(MINUTES / 2);
+  delay(ONE_HOUR / 2);
+
+  // Reverse 45 min
+  setDirection(false);
+  rampSpeed(SEASON_SPEED);
+  delay(ONE_HOUR / 2);
 
   rampSpeed(0);
   Serial.println("THE LONG RUN COMPLETE");
@@ -147,13 +143,11 @@ void theLongRun() {
 
 void circleOfStops() {
   Serial.println("Circle Of Stops");
-  bool direction = true;
+  bool dir = true;
 
-  int speed = random(80, MAX_SPEED);
-  //int speed = MAX_SPEED;
   for (int i = 0; i < 6; i++) {
-    go(direction, speed, 6000, 5000, 1);  // one slow dip
-    direction = !direction;
+    go(dir, MAX_SPEED, 6000, 5000, 1);  // one slow dip
+    dir = !dir;
   }
 }
 
@@ -194,25 +188,14 @@ void setup() {
 }
 
 // -------- loop --------
-static bool didLongRun = false;
-
 void loop() {
   Serial.println("LOOP START");
 
-  for (int i = 0; i < 5; i++) {
-    Serial.print("CYCLE ");
-    Serial.println(i + 1);
+  //theLongRun();
+  circleOfStops();
+  longTrainRunning();
+  gentleWander();
 
-    circleOfStops();
-    longTrainRunning();
-    gentleWander();
-  }
-
-  Serial.println("CYCLES COMPLETE — RESTING");
-  
-  const unsigned long LONG_REST = 20UL * 60UL * 1000UL; // 20 minutes
-  delay(LONG_REST);
-
-  Serial.println();
+  Serial.println("LOOP END");
 }
 
