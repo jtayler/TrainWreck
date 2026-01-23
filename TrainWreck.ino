@@ -16,6 +16,8 @@ const int DIP_SPEED = MAX_SPEED * 4 / 9;  // ~44%
 const unsigned long DIP_TIME = 2500;     // ms per dip
 
 // -------- forward declaration --------
+float speedToMph(int pwm);
+
 void go(bool forward,
         int speed,
         unsigned long runTime,
@@ -35,46 +37,36 @@ void setDirection(bool forward) {
 
 void rampSpeed(int target) {
   static int current = 0;
-  target = constrain(target, target == 0 ? 0 : MIN_SPEED, MAX_SPEED);
+
+  if (target != 0) target = max(target, MIN_SPEED);
+  target = min(target, MAX_SPEED);
 
   if (target == current) return;
 
   int start = current;
   int delta = abs(target - start);
 
-  Serial.print(target > current ? "S-RAMP UP → " : "S-RAMP DOWN → ");
-    Serial.print(speedToMph(target), 1);
-    Serial.println(" MPH");
+  Serial.print(target > current ? "🔼 RAMP " : "🔽 RAMP ");
+  Serial.print(speedToMph(target), 1);
+  Serial.println(" MPH");
 
   while (current != target) {
     int progressed = abs(current - start);
-    float phase = (float)progressed / delta;   // 0.0 → 1.0
+    float phase = (float)progressed / delta;
 
-    // S-curve: gentle start, faster middle, gentle end
     int step = max(1, (int)(RAMP_STEP * (0.5 + 1.5 * phase * (1 - phase))));
 
+    // move toward target
     current += (current < target) ? step : -step;
 
-    // clamp to target
-    if ((current < target && current > target) ||
-        (current > target && current < target)) {
+    // ✅ PROPER CLAMP — did we pass the target?
+    if ((start < target && current > target) ||
+        (start > target && current < target)) {
       current = target;
     }
 
     analogWrite(speedPin, current);
     delay(RAMP_DELAY);
-  }
-
-  if (current == 0) Serial.println("STOPPED");
-  else if (current == MAX_SPEED) {
-    Serial.print("MAX SPEED ");
-    Serial.print(speedToMph(current), 1);
-    Serial.println(" MPH");
-  }
-  else {
-    Serial.print("AT SPEED ");
-    Serial.print(speedToMph(current), 1);
-    Serial.println(" MPH");
   }
 }
 // -------- core primitive --------
@@ -86,19 +78,26 @@ void go(bool forward,
 
   speed = constrain(speed, 0, MAX_SPEED);
 
-  Serial.print("GO ");
-  Serial.print(forward ? "Forward" : "Reverse");
-  Serial.print(" | dips ");
+Serial.print("🟢 GO ⏱ ");
+Serial.print(runTime);
+Serial.print("s");
+
+Serial.print(forward ? " ▶️ FWD " : " ◀️ REV ");
+Serial.print(speedToMph(speed), 1);
+Serial.print(" MPH ");
+
+if (dipCount > 0) {
+  Serial.print(" Dips: ");
   Serial.print(dipCount);
-  Serial.print(" | speed ");
-  Serial.print(speedToMph(speed), 1);
-  Serial.println(" MPH");
+}
+
+Serial.println();
 
   setDirection(forward);
   rampSpeed(speed);
 
   if (dipCount > 0) {
-    unsigned long slice = runTime / (dipCount + 1) * 3;
+    unsigned long slice = (runTime * 1000UL) / (dipCount + 1);
 
     for (int i = 0; i < dipCount; i++) {
       delay(slice);
@@ -108,11 +107,15 @@ void go(bool forward,
     }
     delay(slice);
   } else {
-    delay(runTime);
+    delay(runTime * 1000);
   }
 
   rampSpeed(0);
-  delay(pauseTime);
+  Serial.print("🛑 STOP ⏱ ");
+  Serial.print(pauseTime);
+  Serial.println("s");
+
+  delay(pauseTime * 1000);
 }
 
 float speedToMph(int pwm) {
@@ -142,32 +145,35 @@ void theLongRun() {
 }
 
 void circleOfStops() {
-  Serial.println("Circle Of Stops");
+  Serial.println("🔁 Circle Of Stops");
   bool dir = true;
+  int spd = random(100, MAX_SPEED + 1);
 
   for (int i = 0; i < 6; i++) {
-    go(dir, MAX_SPEED, 6000, 5000, 1);  // one slow dip
+    go(dir, spd, 6, 5, 1);  // one slow dip
     dir = !dir;
   }
 }
 
 void longTrainRunning() {
-  Serial.println("Long Train Running");
+  Serial.println("🔁 Long Train Running");
+  int spd = random(100, MAX_SPEED + 1);
+
   for (int i = 0; i < 3; i++) {
-    go(true,  MAX_SPEED, 20000, 6000, 2);
-    go(false, MAX_SPEED, 20000, 6000, 2);
+    go(true,  spd, 20, 6, 2);
+    go(false, spd, 20, 6, 2);
   }
 }
 
 void gentleWander() {
-  Serial.println("Gentle Wander");
+  Serial.println("🔁 Gentle Wander");
   for (int i = 0; i < 5; i++) {
     bool dir = random(0, 2);
-    int spd  = MAX_SPEED;
+    int spd = random(100, MAX_SPEED + 1);
     int dips = random(1, 3);   // 0–2 dips
     go(dir, spd,
-       random(8000, 14000),
-       random(4000, 7000),
+       random(8, 14),
+       random(4, 7),
        dips);
   }
 }
@@ -175,7 +181,9 @@ void gentleWander() {
 // -------- setup --------
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  delay(1);
+  
+  randomSeed(analogRead(A0));
 
   pinMode(speedPin, OUTPUT);
   pinMode(dirPin, OUTPUT);
@@ -189,6 +197,7 @@ void setup() {
 
 // -------- loop --------
 void loop() {
+  Serial.println("");
   Serial.println("LOOP START");
 
   //theLongRun();
