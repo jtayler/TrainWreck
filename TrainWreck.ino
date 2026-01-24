@@ -1,22 +1,25 @@
 // -------- pins --------
-const int speedPin = 9;   // PWMA  (speed / PWM)
-const int dirPin   = 8;   // AIN1  (direction)
-const int dirPin2  = 7;   // AIN2  (direction)
-const int stbyPin  = 6;   // STBY  (enable)
+const int in1Pin = 9;   // PWM
+const int in2Pin = 10;  // PWM
 
 // -------- tuning --------
-const int MAX_SPEED   = 130;   // safer ceiling for 12V
-const int RAMP_STEP   = 2;
-const int RAMP_DELAY  = 50;    // ms
-const int MIN_SPEED   = 10;  
-const float MAX_MPH = 63.0;   // calibrate once, then trust it
+const int MAX_SPEED   = 80;   // safer ceiling for 12V
+const int RAMP_STEP   = 1;
+const int RAMP_DELAY  = 80;    // ms
+const int MIN_SPEED   = 8;  
+const float MAX_MPH = 68.0;   // calibrate once, then trust it
 
 // -------- dip behavior --------
-const int DIP_SPEED = MAX_SPEED * 4 / 9;  // ~44%
+const int DIP_SPEED = MAX_SPEED * 3 / 9;  // ~44%
 const unsigned long DIP_TIME = 2500;     // ms per dip
 
 // -------- forward declaration --------
-float speedToMph(int pwm);
+float speedToMph(int pwm) {
+  pwm = constrain(pwm, 0, MAX_SPEED);
+  return (pwm / (float)MAX_SPEED) * MAX_MPH;
+}
+
+bool lastDirection = true;
 
 void go(bool forward,
         int speed,
@@ -25,14 +28,46 @@ void go(bool forward,
         int dipCount = 0);
 
 // -------- helpers --------
-void setDirection(bool forward) {
-  if (forward) {
-    digitalWrite(dirPin, HIGH);
-    digitalWrite(dirPin2, LOW);
+
+void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime, int dipCount) {
+  setDirection(forward);
+  
+  // Ramp up
+  rampSpeed(speed);
+
+  // Handle speed "dips" during the run (simulates slowing for curves/stations)
+  if (dipCount > 0) {
+    unsigned long segment = (runTime * 1000) / (dipCount + 1);
+    for (int i = 0; i < dipCount; i++) {
+      delay(segment);
+      rampSpeed(DIP_SPEED);
+      delay(DIP_TIME);
+      rampSpeed(speed);
+    }
+    delay(segment);
   } else {
-    digitalWrite(dirPin, LOW);
-    digitalWrite(dirPin2, HIGH);
+    delay(runTime * 1000);
   }
+
+  // Ramp down and pause
+  rampSpeed(0);
+  delay(pauseTime * 1000);
+}
+
+void writeMotor(bool forward, int pwm) {
+  pwm = constrain(pwm, 0, MAX_SPEED);
+
+  if (forward) {
+    analogWrite(in1Pin, pwm);
+    digitalWrite(in2Pin, LOW);
+  } else {
+    digitalWrite(in1Pin, LOW);
+    analogWrite(in2Pin, pwm);
+  }
+}
+
+void setDirection(bool forward) {
+  lastDirection = forward;
 }
 
 void rampSpeed(int target) {
@@ -56,71 +91,16 @@ void rampSpeed(int target) {
 
     int step = max(1, (int)(RAMP_STEP * (0.5 + 1.5 * phase * (1 - phase))));
 
-    // move toward target
     current += (current < target) ? step : -step;
 
-    // ✅ PROPER CLAMP — did we pass the target?
     if ((start < target && current > target) ||
         (start > target && current < target)) {
       current = target;
     }
 
-    analogWrite(speedPin, current);
+    writeMotor(lastDirection, current);
     delay(RAMP_DELAY);
   }
-}
-// -------- core primitive --------
-void go(bool forward,
-        int speed,
-        unsigned long runTime,
-        unsigned long pauseTime,
-        int dipCount) {
-
-  speed = constrain(speed, 0, MAX_SPEED);
-
-Serial.print("🟢 GO ⏱ ");
-Serial.print(runTime);
-Serial.print("s");
-
-Serial.print(forward ? " ▶️ FWD " : " ◀️ REV ");
-Serial.print(speedToMph(speed), 1);
-Serial.print(" MPH ");
-
-if (dipCount > 0) {
-  Serial.print(" Dips: ");
-  Serial.print(dipCount);
-}
-
-Serial.println();
-
-  setDirection(forward);
-  rampSpeed(speed);
-
-  if (dipCount > 0) {
-    unsigned long slice = (runTime * 1000UL) / (dipCount + 1);
-
-    for (int i = 0; i < dipCount; i++) {
-      delay(slice);
-      rampSpeed(DIP_SPEED);
-      delay(DIP_TIME);
-      rampSpeed(speed);
-    }
-    delay(slice);
-  } else {
-    delay(runTime * 1000);
-  }
-
-  rampSpeed(0);
-  Serial.print("🛑 STOP ⏱ ");
-  Serial.print(pauseTime);
-  Serial.println("s");
-
-  delay(pauseTime * 1000);
-}
-
-float speedToMph(int pwm) {
-  pwm = constrain(pwm, 0, MAX_SPEED);
-  return (pwm / (float)MAX_SPEED) * MAX_MPH;
 }
 
 // -------- behaviors --------
@@ -147,7 +127,7 @@ void theLongRun() {
 void circleOfStops() {
   Serial.println("🔁 Circle Of Stops");
   bool dir = true;
-  int spd = random(100, MAX_SPEED + 1);
+  int spd = random(40, MAX_SPEED + 1);
 
   for (int i = 0; i < 6; i++) {
     go(dir, spd, 6, 5, 1);  // one slow dip
@@ -185,22 +165,29 @@ void setup() {
   
   randomSeed(analogRead(A0));
 
-  pinMode(speedPin, OUTPUT);
-  pinMode(dirPin, OUTPUT);
-  pinMode(dirPin2, OUTPUT);
-  pinMode(stbyPin, OUTPUT);
+  pinMode(in1Pin, OUTPUT);
+  pinMode(in2Pin, OUTPUT);
 
-  digitalWrite(stbyPin, HIGH); // enable driver
+  Serial.println(MCUSR, HEX);
+  MCUSR = 0;
+
+  //digitalWrite(dirPin, LOW);
 
   Serial.println("BOOT");
 }
 
 // -------- loop --------
+
 void loop() {
   Serial.println("");
   Serial.println("LOOP START");
 
-  //theLongRun();
+// digitalWrite(dirPin, LOW);
+// analogWrite(speedPin, 80);
+// delay(10000);
+// analogWrite(speedPin, 0);
+// delay(2000);
+
   circleOfStops();
   longTrainRunning();
   gentleWander();
