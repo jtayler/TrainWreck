@@ -3,14 +3,14 @@ const int in1Pin = 9;   // PWM
 const int in2Pin = 10;  // PWM
 
 // -------- tuning --------
-const int MAX_SPEED   = 80;   // safer ceiling for 12V
+const int MAX_SPEED   = 44;   // safer ceiling for 12V
 const int RAMP_STEP   = 1;
-const int RAMP_DELAY  = 80;    // ms
-const int MIN_SPEED   = 8;  
+const int RAMP_DELAY  = 120;    // ms
+const int MIN_SPEED   = 5;  
 const float MAX_MPH = 68.0;   // calibrate once, then trust it
 
 // -------- dip behavior --------
-const int DIP_SPEED = MAX_SPEED * 3 / 9;  // ~44%
+const int DIP_SPEED = MAX_SPEED * 4 / 9;  // ~44%
 const unsigned long DIP_TIME = 2500;     // ms per dip
 
 // -------- forward declaration --------
