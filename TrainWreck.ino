@@ -3,15 +3,15 @@ const int in1Pin = 9;   // PWM
 const int in2Pin = 10;  // PWM
 
 // -------- tuning --------
-const int MAX_SPEED   = 44;   // safer ceiling for 12V
+const int MAX_SPEED   = 50;   // safer ceiling for 12V
 const int RAMP_STEP   = 1;
-const int RAMP_DELAY  = 120;    // ms
-const int MIN_SPEED   = 5;  
+const int RAMP_DELAY  = 180;    // ms
+const int MIN_SPEED   = 8;  
 const float MAX_MPH = 68.0;   // calibrate once, then trust it
 
 // -------- dip behavior --------
 const int DIP_SPEED = MAX_SPEED * 4 / 9;  // ~44%
-const unsigned long DIP_TIME = 2500;     // ms per dip
+const unsigned long DIP_TIME = 3600;     // ms per dip
 
 // -------- forward declaration --------
 float speedToMph(int pwm) {
@@ -33,24 +33,42 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
   setDirection(forward);
   
   // Ramp up
+      Serial.print("🟢 LOOP ⏱ ");
+      Serial.print(runTime);
+      Serial.println("s");
   rampSpeed(speed);
 
   // Handle speed "dips" during the run (simulates slowing for curves/stations)
   if (dipCount > 0) {
     unsigned long segment = (runTime * 1000) / (dipCount + 1);
     for (int i = 0; i < dipCount; i++) {
+      Serial.print("🟢 FAST LEG ⏱ ");
+      Serial.print(segment / 1000);
+      Serial.println("s");
       delay(segment);
       rampSpeed(DIP_SPEED);
+      Serial.print("🟡 SLOW LEG ⏱ ");
+      Serial.print(DIP_TIME/1000);
+      Serial.println("s");
       delay(DIP_TIME);
       rampSpeed(speed);
     }
+      Serial.print("🟢 FAST LEG ⏱ ");
+      Serial.print(segment / 1000);
+      Serial.println("s");
     delay(segment);
+
   } else {
+      Serial.print("🟢 ONLY LEG ⏱ ");
+      Serial.print(runTime);
+      Serial.println("s");
     delay(runTime * 1000);
   }
 
-  // Ramp down and pause
   rampSpeed(0);
+  Serial.print("🛑 STOP ⏱ ");
+  Serial.print(pauseTime);
+  Serial.println("s");
   delay(pauseTime * 1000);
 }
 
@@ -73,8 +91,9 @@ void setDirection(bool forward) {
 void rampSpeed(int target) {
   static int current = 0;
 
-  if (target != 0) target = max(target, MIN_SPEED);
-  target = min(target, MAX_SPEED);
+  // normalize the REQUEST
+  if (target != 0 && abs(target) < MIN_SPEED) target = 0;
+  target = constrain(target, 0, MAX_SPEED);
 
   if (target == current) return;
 
@@ -103,45 +122,24 @@ void rampSpeed(int target) {
   }
 }
 
-// -------- behaviors --------
-void theLongRun() {
-  Serial.println("THE LONG RUN (seasoning)");
-
-  const unsigned long ONE_HOUR = 60UL * 60UL * 1000UL;
-  const int SEASON_SPEED = MAX_SPEED * 9 / 10; // ~70%
-
-  // Forward 45 min
-  setDirection(true);
-  rampSpeed(SEASON_SPEED);
-  delay(ONE_HOUR / 2);
-
-  // Reverse 45 min
-  setDirection(false);
-  rampSpeed(SEASON_SPEED);
-  delay(ONE_HOUR / 2);
-
-  rampSpeed(0);
-  Serial.println("THE LONG RUN COMPLETE");
-}
-
 void circleOfStops() {
   Serial.println("🔁 Circle Of Stops");
   bool dir = true;
   int spd = random(40, MAX_SPEED + 1);
 
   for (int i = 0; i < 6; i++) {
-    go(dir, spd, 6, 5, 1);  // one slow dip
+    go(dir, spd, 16, 8, 1);  // one slow dip
     dir = !dir;
   }
 }
 
 void longTrainRunning() {
   Serial.println("🔁 Long Train Running");
-  int spd = random(100, MAX_SPEED + 1);
+  int spd = random(40, MAX_SPEED + 1);
 
   for (int i = 0; i < 3; i++) {
-    go(true,  spd, 20, 6, 2);
-    go(false, spd, 20, 6, 2);
+    go(true,  spd, 26, 6, 2);
+    go(false, spd, 14, 6, 2);
   }
 }
 
@@ -149,11 +147,11 @@ void gentleWander() {
   Serial.println("🔁 Gentle Wander");
   for (int i = 0; i < 5; i++) {
     bool dir = random(0, 2);
-    int spd = random(100, MAX_SPEED + 1);
+    int spd = random(40, MAX_SPEED + 1);
     int dips = random(1, 3);   // 0–2 dips
     go(dir, spd,
-       random(8, 14),
-       random(4, 7),
+       random(18, 14),
+       random(14, 7),
        dips);
   }
 }
