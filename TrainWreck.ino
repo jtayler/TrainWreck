@@ -1,3 +1,16 @@
+#include <SPI.h>
+#include <GxEPD2_3C.h>
+#include <Fonts/FreeMono9pt7b.h>
+
+#define CS_PIN   3
+#define DC_PIN   8
+#define RST_PIN  5
+#define BUSY_PIN 4
+
+GxEPD2_3C<GxEPD2_290_C90c, 16> display(
+  GxEPD2_290_C90c(CS_PIN, DC_PIN, RST_PIN, BUSY_PIN)
+);
+
 // -------- pins --------
 const int in1Pin = 9;   // PWM
 const int in2Pin = 10;  // PWM
@@ -29,6 +42,34 @@ void go(bool forward,
 
 // -------- helpers --------
 
+int lastDrawnMPH = -1;
+bool displayBusy = false;
+unsigned long lastDrawTime = 0;
+const unsigned long DISPLAY_MIN_INTERVAL = 15000; // 15s
+
+void updateMPH(float mph) {
+  if (displayBusy) return;
+
+  int rounded = (int)(mph + 0.5);
+  if (rounded == lastDrawnMPH) return;
+
+  displayBusy = true;
+  lastDrawnMPH = rounded;
+
+  display.firstPage();
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setFont(&FreeMono9pt7b);
+    display.setTextColor(GxEPD_BLACK);
+    display.setCursor(10, 30);
+    display.print("MPH");
+    display.setCursor(10, 65);
+    display.print(rounded);
+  } while (display.nextPage());
+
+  displayBusy = false;
+}
+
 void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime, int dipCount) {
   setDirection(forward);
   
@@ -36,7 +77,8 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
       Serial.print("🟢 LOOP ⏱ ");
       Serial.print(runTime);
       Serial.println("s");
-  rampSpeed(speed);
+      rampSpeed(speed);
+      //updateMPH(speedToMph(speed));
 
   // Handle speed "dips" during the run (simulates slowing for curves/stations)
   if (dipCount > 0) {
@@ -162,6 +204,12 @@ void setup() {
   delay(1);
   
   randomSeed(analogRead(A0));
+
+  SPI.begin();
+  SPI.setClockDivider(SPI_CLOCK_DIV4);
+
+  display.init(115200, false, 300, true);
+  display.setFullWindow();
 
   pinMode(in1Pin, OUTPUT);
   pinMode(in2Pin, OUTPUT);
