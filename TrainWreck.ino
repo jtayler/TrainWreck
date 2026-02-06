@@ -8,8 +8,12 @@
 //U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, CS_PIN, DC_PIN, RST_PIN);
 U8G2_SH1106_128X64_NONAME_1_4W_HW_SPI u8g2(U8G2_R0, 10, 9, 8);
 // -------- pins --------
-const int in1Pin = 5;   // PWM
-const int in2Pin = 6;  // PWM
+const int in1Pin = 5; 
+const int in2Pin = 6; 
+
+const int RED_PIN = 2;
+const int YEL_PIN = 3;
+const int GRN_PIN = 4;
 
 // -------- tuning --------
 const int MAX_SPEED   = 50;   // safer ceiling for 12V
@@ -99,6 +103,38 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
   delay(pauseTime * 1000);
 }
 
+// -------- signal --------
+
+void signalRed() {
+  digitalWrite(RED_PIN, HIGH);
+  digitalWrite(YEL_PIN, LOW);
+  digitalWrite(GRN_PIN, LOW);
+}
+
+void signalGreen() {
+  digitalWrite(RED_PIN, LOW);
+  digitalWrite(YEL_PIN, LOW);
+  digitalWrite(GRN_PIN, HIGH);
+}
+
+void signalYellow() {
+  digitalWrite(RED_PIN, LOW);
+  digitalWrite(YEL_PIN, HIGH);
+  digitalWrite(GRN_PIN, LOW);
+}
+
+void updateSignal(int speed, bool rampUp) {
+  if (speed == 0) {
+    signalRed();
+    return;
+  }
+  if (rampUp) {
+    signalGreen();
+  } else {
+    signalYellow();
+  }
+}
+
 // -------- motor --------
 
 void writeMotor(bool forward, int pwm) {
@@ -135,30 +171,26 @@ void rampSpeed(int target) {
 
   Serial.print(target > current ? "🔼 RAMP " : "🔽 RAMP ");
   Serial.print(speedToMph(target), 1);
+  
+  updateSignal(current, (target > current));
 
   while (current != target) {
     int progressed = abs(current - start);
     float phase = (float)progressed / delta;
-
     int step = max(1, (int)(RAMP_STEP * (0.5 + 1.5 * phase * (1 - phase))));
-
     current += (current < target) ? step : -step;
-
     if ((start < target && current > target) ||
         (start > target && current < target)) {
       current = target;
     }
-  snprintf(line2, sizeof(line2), "%d MPH", current);
-  const char* action = (target > current) ? "RAMP TO" : "DOWN TO";
-
-if (target == 0) {
-  snprintf(line3, sizeof(line3), "%s FULL STOP", action);
-} else {
-  snprintf(line3, sizeof(line3), "%s %dMPH", action, target);
-}
-
-  draw();
-
+    snprintf(line2, sizeof(line2), "%d MPH", current);
+    const char* action = (target > current) ? "RAMP TO" : "DOWN TO";
+    if (target == 0) {
+      snprintf(line3, sizeof(line3), "%s FULL STOP", action);
+    } else {
+      snprintf(line3, sizeof(line3), "%s %dMPH", action, target);
+    }
+    draw();
     writeMotor(lastDirection, current);
     delay(RAMP_DELAY);
   }
@@ -177,6 +209,21 @@ void circleOfStops() {
   for (int i = 0; i < 6; i++) {
     go(dir, spd, 16, 8, 1);  // one slow dip
     dir = !dir;
+  }
+}
+
+void jessicaLovesTrains() {
+  Serial.println("Jessica Loves Trains");
+  snprintf(line1, sizeof(line1), "%s", "Jessica Loves Trains");
+  draw();
+
+  for (int i = 0; i < 5; i++) {
+    bool dir = (i % 2);
+    int spd = MAX_SPEED;
+    go(dir, spd,
+       random(20, 60),
+       random(7, 10),
+       random(2, 4));
   }
 }
 
@@ -246,7 +293,7 @@ void draw() {
     u8g2.clearBuffer();
     toUpper(line1);
     // ---- TOP: TITLE (small, ALL CAPS, long) ----
-    u8g2.setFont(u8g2_font_5x7_tr);
+    u8g2.setFont(u8g2_font_6x10_tr);
     u8g2.drawStr(
       (128 - u8g2.getStrWidth(line1)) / 2,
       10,
@@ -284,11 +331,16 @@ void draw() {
 // -------- loop --------
 void loop() {
   Serial.println("LOOP START");
-
   circleOfStops();
+  gentleWander();
+  jessicaLovesTrains();
+  circleOfStops();
+  gentleWander();
   longTrainRunning();
   gentleWander();
-
+  jessicaLovesTrains();
+  circleOfStops();
+  gentleWander();
   Serial.println("LOOP END");
 }
 
