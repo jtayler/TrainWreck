@@ -16,20 +16,20 @@ const int YEL_PIN = 3;
 const int GRN_PIN = 4;
 
 // -------- tuning --------
-const int MAX_SPEED   = 50;   // safer ceiling for 12V
+const int MAX_SPEED   = 42;   // safer ceiling for 12V
 const int RAMP_STEP   = 1;
-const int RAMP_DELAY  = 180;    // ms
+const int RAMP_DELAY  = 100;    // ms
 const int MIN_SPEED   = 8;  
-const float MAX_MPH = 68.0;   // calibrate once, then trust it
+const float MAX_MPH = 72.0;   // calibrate once, then trust it
 
 // -------- dip behavior --------
 const int DIP_SPEED = MAX_SPEED * 4 / 9;  // ~44%
 const unsigned long DIP_TIME = 3600;     // ms per dip
 
 // -------- forward declaration --------
-float speedToMph(int pwm) {
+int speedToMph(int pwm) {
   pwm = constrain(pwm, 0, MAX_SPEED);
-  return (pwm / (float)MAX_SPEED) * MAX_MPH;
+  return (pwm * MAX_MPH) / MAX_SPEED;   // integer math
 }
 
 // -------- display --------
@@ -54,8 +54,8 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
   Serial.print("🟢 LOOP ⏱ ");
   Serial.print(runTime);
   Serial.println("s");
-  snprintf(line3, sizeof(line3), "%s %ds.", "LOOP", runTime);
-  draw();
+  // snprintf(line3, sizeof(line3), "%s %ds", "LOOP", runTime);
+  // draw();
 
   rampSpeed(speed);
 
@@ -67,14 +67,14 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
       Serial.print(segment / 1000);
       Serial.println("s");
       const char* msg;
-      snprintf(line3, sizeof(line3), "%s %ds.", "FAST LEG", segment / 1000);
+      snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
       draw();
       delay(segment);
       rampSpeed(DIP_SPEED);
       Serial.print("🟡 SLOW LEG ⏱ ");
       Serial.print(DIP_TIME/1000);
       Serial.println("s");
-      snprintf(line3, sizeof(line3), "%s %ds.", "SLOW LEG", DIP_TIME / 1000);
+      snprintf(line3, sizeof(line3), "%s %ds", "SLOW LEG", DIP_TIME / 1000);
       draw();
       delay(DIP_TIME);
       rampSpeed(speed);
@@ -82,23 +82,22 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
     Serial.print("🟢 FAST LEG ⏱ ");
     Serial.print(segment / 1000);
     Serial.println("s");
-    snprintf(line3, sizeof(line3), "%s %ds.", "FAST LEG", segment / 1000);
+    snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
     draw();
     delay(segment);
   } else {
     Serial.print("🟢 ONLY LEG ⏱ ");
     Serial.print(runTime);
     Serial.println("s");
-    snprintf(line3, sizeof(line3), "%s %ds.", "ONLY LEG", runTime);
+    snprintf(line3, sizeof(line3), "%s %ds", "ONLY LEG", runTime);
     draw();
     delay(runTime * 1000);
   }
-
   rampSpeed(0);
   Serial.print("🛑 STOP ⏱ ");
   Serial.print(pauseTime);
   Serial.println("s");
-  snprintf(line3, sizeof(line3), "%s %ds.", "STOP", pauseTime);
+  snprintf(line3, sizeof(line3), "%s %ds", "FULL STOP", pauseTime);
   draw();
   delay(pauseTime * 1000);
 }
@@ -183,66 +182,87 @@ void rampSpeed(int target) {
         (start > target && current < target)) {
       current = target;
     }
-    snprintf(line2, sizeof(line2), "%d MPH", current);
+    snprintf(line2, sizeof(line2), "%d MPH", speedToMph(current));
     const char* action = (target > current) ? "RAMP TO" : "DOWN TO";
     if (target == 0) {
-      snprintf(line3, sizeof(line3), "%s FULL STOP", action);
+      snprintf(line3, sizeof(line3), "%s STOP", action);
     } else {
-      snprintf(line3, sizeof(line3), "%s %dMPH", action, target);
+      snprintf(line3, sizeof(line3), "%s %dMPH", action, speedToMph(target));
     }
-    draw();
     writeMotor(lastDirection, current);
+    draw();
     delay(RAMP_DELAY);
   }
 }
 
 // -------- routes --------
 
+void bAndO() {
+  snprintf(line1, sizeof(line1), "%s", "The B&O Railroad");
+  draw();
+
+  bool dir = true;
+
+  for (int i = 0; i < 2; i++) {
+    go(dir, MAX_SPEED, 16, 8, 0);  // one slow dip
+    dir = !dir;
+  }
+}
+
 void circleOfStops() {
-  Serial.println("Circle Of Stops");
-  snprintf(line1, sizeof(line1), "%s", "Circle Of Stops");
+  snprintf(line1, sizeof(line1), "%s", "The Circle Line");
   draw();
 
   bool dir = true;
   int spd = random(40, MAX_SPEED + 1);
 
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 8; i++) {
+    go(dir, spd, 16, 8, 1);  // one slow dip
+    dir = !dir;
+  }
+}
+
+void orientExpress() {
+  snprintf(line1, sizeof(line1), "%s", "The Orient Express");
+  draw();
+
+  bool dir = true;
+  int spd = random(40, MAX_SPEED + 1);
+
+  for (int i = 0; i < 4; i++) {
     go(dir, spd, 16, 8, 1);  // one slow dip
     dir = !dir;
   }
 }
 
 void jessicaLovesTrains() {
-  Serial.println("Jessica Loves Trains");
-  snprintf(line1, sizeof(line1), "%s", "Jessica Loves Trains");
+  snprintf(line1, sizeof(line1), "%s", "Jessica Central");
   draw();
 
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 4; i++) {
     bool dir = (i % 2);
     int spd = MAX_SPEED;
     go(dir, spd,
        random(20, 60),
-       random(7, 10),
+       6,
        random(2, 4));
   }
 }
 
 void longTrainRunning() {
-  Serial.println("Long Train Running");
-  snprintf(line1, sizeof(line1), "%s", "Long Train Running");
+  snprintf(line1, sizeof(line1), "%s", "New York Central");
   draw();
 
-  int spd = random(40, MAX_SPEED + 1);
+  int spd = random(MAX_SPEED - 20, MAX_SPEED + 1);
 
-  for (int i = 0; i < 3; i++) {
-    go(true,  spd, 126, 6, 4);
-    go(false, spd, 44, 6, 2);
+  for (int i = 0; i < 2; i++) {
+    go(true,  spd, 43, 6, 4);
+    go(false, spd, 43, 6, 4);
   }
 }
 
 void gentleWander() {
-  Serial.println("Gentle Wander");
-  snprintf(line1, sizeof(line1), "%s", "Gentle Wander");
+  snprintf(line1, sizeof(line1), "%s", "Union Pacific");
   draw();
 
   for (int i = 0; i < 5; i++) {
@@ -250,33 +270,43 @@ void gentleWander() {
     int spd = random(20, MAX_SPEED - 10);
     int dips = random(4, 9);
     go(dir, spd,
-       random(45, 255),
-       random(7, 10),
+       random(45, 95),
+       random(2, 6),
        dips);
+  }
+}
+
+void silverStreak() {
+  snprintf(line1, sizeof(line1), "%s", "The Silver Streak");
+  draw();
+
+  for (int i = 0; i < 4; i++) {
+    bool dir = (i % 2);
+    go(dir, random(40, MAX_SPEED),
+       10,
+       6,
+       0);
   }
 }
 
 // -------- setup --------
 void setup() {
+  Serial.begin(115200);
+
+  Serial.println("Serial Established.");
+
   Serial.println("Set pin modes early...");
   pinMode(in1Pin, OUTPUT);
   pinMode(in2Pin, OUTPUT);
   digitalWrite(in1Pin, LOW);
   digitalWrite(in2Pin, LOW);
 
-  Serial.begin(115200);
-
-  Serial.println("Serial Established.");
-
   u8g2.begin(); 
+  u8g2.clearBuffer();   
 
   Serial.println("Display initialized.");
 
   Serial.println("BOOT");
-  u8g2.clearBuffer(); 
-  //loops = loops + 1;
-  
-
 }
 
 // -------- draw --------
@@ -293,35 +323,27 @@ void draw() {
     u8g2.clearBuffer();
     toUpper(line1);
     // ---- TOP: TITLE (small, ALL CAPS, long) ----
-    u8g2.setFont(u8g2_font_6x10_tr);
+    u8g2.setFont(u8g2_font_7x13_tr);
     u8g2.drawStr(
       (128 - u8g2.getStrWidth(line1)) / 2,
-      10,
+      9,
       line1
     );
-
-    // ---- MIDDLE: SPEED (huge digits, inverted band) ----
-    u8g2.setFont(u8g2_font_logisoso32_tn);
-
-    // inverted stripe
     u8g2.setDrawColor(1);
+    u8g2.setFont(u8g2_font_logisoso32_tn);
     u8g2.drawBox(0, 14, 128, 36);
 
-    // digits
     u8g2.setDrawColor(0);
-    u8g2.drawStr(
-      (128 - u8g2.getStrWidth(line2)) / 2 + 7,
-      48,
-      line2
-    );
+    u8g2.setFont(u8g2_font_logisoso32_tn);
+    u8g2.drawStr(10, 48, line2);
+    u8g2.setFont(u8g2_font_ncenB18_tr);
+    u8g2.drawStr(55, 48, "MPH");
 
     u8g2.setDrawColor(1);
-
-    // ---- BOTTOM: STATUS / PHASE ----
-    u8g2.setFont(u8g2_font_6x10_tr);
+    u8g2.setFont(u8g2_font_9x15_tr);
     u8g2.drawStr(
-      (128 - u8g2.getStrWidth(line3)) / 2,
-      62,
+      (130 - u8g2.getStrWidth(line3)) / 2,
+      64,
       line3
     );
 
@@ -331,15 +353,16 @@ void draw() {
 // -------- loop --------
 void loop() {
   Serial.println("LOOP START");
-  circleOfStops();
-  gentleWander();
+  bAndO();
   jessicaLovesTrains();
-  circleOfStops();
-  gentleWander();
+  silverStreak();
+  orientExpress();
   longTrainRunning();
-  gentleWander();
-  jessicaLovesTrains();
   circleOfStops();
+  gentleWander();
+  circleOfStops();
+  orientExpress();
+  jessicaLovesTrains();
   gentleWander();
   Serial.println("LOOP END");
 }
