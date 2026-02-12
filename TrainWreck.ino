@@ -8,6 +8,10 @@
 //U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, CS_PIN, DC_PIN, RST_PIN);
 U8G2_SH1106_128X64_NONAME_1_4W_HW_SPI u8g2(U8G2_R0, 10, 9, 8);
 // -------- pins --------
+
+const int IR_PIN = A0;
+const int IR_THRESHOLD = 420;
+
 const int in1Pin = 5; 
 const int in2Pin = 6; 
 
@@ -21,6 +25,13 @@ const int RAMP_STEP   = 1;
 const int RAMP_DELAY  = 100;
 const int MIN_SPEED   = 8;  
 const float MAX_MPH = 72.0;
+
+unsigned long MS_FWD = 180;   
+unsigned long MS_REV = 200;   
+bool sensorEnabled = false;
+
+bool stationArmed = false;
+unsigned long stationTick = 0;
 
 // -------- dip behavior --------
 const int DIP_SPEED = MAX_SPEED * 4 / 9;
@@ -163,10 +174,8 @@ void setDirection(bool forward) {
 void rampSpeed(int target) {
   static int current = 0;
 
-  // normalize the REQUEST
   if (target != 0 && abs(target) < MIN_SPEED) target = 0;
   target = constrain(target, 0, MAX_SPEED);
-
   if (target == current) return;
 
   int start = current;
@@ -175,31 +184,55 @@ void rampSpeed(int target) {
 
   Serial.print(target > current ? "🔼 RAMP " : "🔽 RAMP ");
   Serial.print(speedToMph(target), 1);
-  
+
   updateSignal((rampUp ? 1 : current), rampUp);
 
   while (current != target) {
+
+    if (sensorEnabled && target == 0) {
+      int v = analogRead(IR_PIN);
+
+      if (!stationArmed && v > IR_THRESHOLD) {
+        stationArmed = true;
+        stationTick = millis();
+        Serial.println(" 🚉 TICK ", stationTick);
+      }
+
+      if (stationArmed) {
+        unsigned long waitMs = (lastDirection > 0) ? MS_FWD : MS_REV;
+        if (millis() - stationTick < waitMs) {
+          writeMotor(lastDirection, current);
+          draw();
+          delay(RAMP_DELAY);
+          continue;
+        }
+        stationArmed = false;
+      }
+    }
+
     int progressed = abs(current - start);
-    float phase = (float)progressed / delta;
+    float phase = (delta == 0) ? 1.0 : (float)progressed / delta;
     int step = max(1, (int)(RAMP_STEP * (0.5 + 1.5 * phase * (1 - phase))));
+
     current += (current < target) ? step : -step;
-    if ((start < target && current > target) ||
-        (start > target && current < target)) {
+
+    if ((start < target && current > target) || (start > target && current < target)) {
       current = target;
     }
+
     snprintf(line2, sizeof(line2), "%d MPH", speedToMph(current));
-    const char* action = rampUp ? "RAMP TO" : "DOWN TO";
     if (target == 0) {
-      snprintf(line3, sizeof(line3), "%s STOP", action);
+      snprintf(line3, sizeof(line3), "%s STOP", rampUp ? "RAMP TO" : "DOWN TO");
     } else {
-      snprintf(line3, sizeof(line3), "%s %d MPH", action, speedToMph(target));
+      snprintf(line3, sizeof(line3), "%s %d MPH", rampUp ? "RAMP TO" : "DOWN TO", speedToMph(target));
     }
+
     writeMotor(lastDirection, current);
     draw();
     delay(RAMP_DELAY);
   }
-    updateSignal(current, rampUp);
 
+  updateSignal(current, rampUp);
 }
 
 // -------- routes --------
