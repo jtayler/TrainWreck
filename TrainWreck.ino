@@ -20,10 +20,10 @@ const int YEL_PIN = 3;
 const int GRN_PIN = 4;
 
 // -------- tuning --------
-const int MAX_SPEED   = 48; 
-const int RAMP_STEP   = 1;
-const int RAMP_DELAY  = 100;
-const int MIN_SPEED   = 8;  
+const int MAX_SPEED   = 180; 
+const int RAMP_STEP   = 5;
+const int RAMP_DELAY  = 5;
+const int MIN_SPEED   = 20;  
 const float MAX_MPH = 72.0;
 
 unsigned long MS_FWD = 180;   
@@ -195,7 +195,7 @@ void rampSpeed(int target) {
       if (!stationArmed && v > IR_THRESHOLD) {
         stationArmed = true;
         stationTick = millis();
-        Serial.println(" 🚉 TICK ", stationTick);
+//        Serial.println(" 🚉 TICK ", stationTick);
       }
 
       if (stationArmed) {
