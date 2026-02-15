@@ -35,7 +35,7 @@ unsigned long stationTick = 0;
 
 // -------- dip behavior --------
 const int DIP_SPEED = MAX_SPEED * 4 / 9;
-const unsigned long DIP_TIME = 3600; // ms per dip
+const unsigned long DIP_TIME = 8600; // ms per dip
 
 // -------- forward declaration --------
 int speedToMph(int pwm) {
@@ -46,6 +46,7 @@ int speedToMph(int pwm) {
 // -------- display --------
 
 bool lastDirection = true;
+int globalCurrentSpeed = 0;
 // Global slots for  3 lines of text
 char line1[64] = "STATUS";
 char line2[64] = "0 MPH";
@@ -153,6 +154,8 @@ void updateSignal(int speed, bool rampUp) {
 
 void writeMotor(bool forward, int pwm) {
   pwm = constrain(pwm, 0, MAX_SPEED);
+  globalCurrentSpeed = pwm;
+
 
   if (forward) {
     analogWrite(in1Pin, pwm);
@@ -173,53 +176,85 @@ void setDirection(bool forward) {
 
 void rampSpeed(int target) {
   static int current = 0;
+  
+  // RESET: Clear the "Tick" memory every time a new ramp command starts
+  stationArmed = false; 
 
   if (target != 0 && abs(target) < MIN_SPEED) target = 0;
   target = constrain(target, 0, MAX_SPEED);
-  if (target == current) return;
+  
+  // If we are already there, just update the global and leave
+  if (target == current) {
+    globalCurrentSpeed = current;
+    return;
+  }
 
   int start = current;
   int delta = abs(target - start);
   bool rampUp = target > current;
 
-  Serial.print(target > current ? "🔼 RAMP " : "🔽 RAMP ");
-  Serial.print(speedToMph(target), 1);
-
+  // Signal Update
   updateSignal((rampUp ? 1 : current), rampUp);
 
   while (current != target) {
-
+    
+    // --- STATION DOCKING LOGIC ---
     if (sensorEnabled && target == 0) {
       int v = analogRead(IR_PIN);
 
+      // Look for the IR sensor trip
       if (!stationArmed && v > IR_THRESHOLD) {
         stationArmed = true;
         stationTick = millis();
-//        Serial.println(" 🚉 TICK ", stationTick);
       }
 
       if (stationArmed) {
         unsigned long waitMs = (lastDirection > 0) ? MS_FWD : MS_REV;
+        
+        // If the timer is still running...
         if (millis() - stationTick < waitMs) {
-          writeMotor(lastDirection, current);
-          draw();
-          delay(RAMP_DELAY);
-          continue;
+          // If we've reached our reliable crawl speed, HOLD IT
+          if (current <= DIP_SPEED) {
+            current = DIP_SPEED; 
+            globalCurrentSpeed = current;
+            writeMotor(lastDirection, current);
+            
+            // Keep the display and serial alive while we wait
+            // Serial.print("Speed:"); Serial.println(current); 
+            draw();
+            delay(RAMP_DELAY);
+            //continue; // Skip the "slowing down" math below
+          }
+        } else {
+          // Timer finished! Let the ramp drop the rest of the way to 0
+          stationArmed = false; 
         }
-        stationArmed = false;
       }
     }
 
+    // --- YOUR S-CURVE MATH ---
     int progressed = abs(current - start);
     float phase = (delta == 0) ? 1.0 : (float)progressed / delta;
+    // This creates the "Bell Curve" for the step size
     int step = max(1, (int)(RAMP_STEP * (0.5 + 1.5 * phase * (1 - phase))));
 
-    current += (current < target) ? step : -step;
-
-    if ((start < target && current > target) || (start > target && current < target)) {
-      current = target;
+    // Apply the step
+    if (rampUp) {
+      current += step;
+      if (current > target) current = target; // Don't overshoot
+    } else {
+      current -= step;
+      if (current < target) current = target; // Don't undershoot
     }
 
+    // --- OUTPUTS ---
+    globalCurrentSpeed = current;
+    
+    // For the Serial Plotter
+    // Serial.print("Speed:");
+    // Serial.println(current);
+
+    // Update Display Strings
     snprintf(line2, sizeof(line2), "%d MPH", speedToMph(current));
     if (target == 0) {
       snprintf(line3, sizeof(line3), "%s STOP", rampUp ? "RAMP TO" : "DOWN TO");
@@ -232,6 +267,7 @@ void rampSpeed(int target) {
     delay(RAMP_DELAY);
   }
 
+  // Final update for the signals
   updateSignal(current, rampUp);
 }
 
@@ -242,10 +278,10 @@ void pelhamRail() {
   draw();
 
   bool dir = true;
-  int spd = random(36, MAX_SPEED + 1);
+  int spd = random(MAX_SPEED * 0.75, MAX_SPEED + 1); 
 
   for (int i = 0; i < 2; i++) {
-    go(dir, spd, 20, 6, 0); 
+    go(dir, spd, 20, 12, 0); 
     dir = !dir;
   }
 }
@@ -257,7 +293,7 @@ void readingRailroad() {
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED, 20, 6, 0); 
+    go(dir, MAX_SPEED, 20, 12, 0); 
     dir = !dir;
   }
 }
@@ -267,7 +303,7 @@ void grandCentral() {
   draw();
 
   bool dir = true;
-  int spd = random(35, MAX_SPEED);
+  int spd = random(MAX_SPEED * 0.75, MAX_SPEED + 1); 
 
   for (int i = 0; i < 4; i++) {
     dir = !dir;
@@ -282,7 +318,7 @@ void hudsonLine() {
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED - 10, 20, 6, 1); 
+    go(dir, MAX_SPEED - 10, 20, 12, 1); 
     dir = !dir;
   }
 }
@@ -306,7 +342,7 @@ void vanderbiltCentral() {
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED - 4, 20, 6, 1); 
+    go(dir, MAX_SPEED - 4, 20, 12, 1); 
     dir = !dir;
   }
 }
@@ -318,7 +354,7 @@ void bAndO() {
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED, 16, 8, 0); 
+    go(dir, MAX_SPEED, 16, 16, 0); 
     dir = !dir;
   }
 }
@@ -328,10 +364,10 @@ void circleOfStops() {
   draw();
 
   bool dir = true;
-  int spd = random(34, MAX_SPEED + 1);
+  int spd = random(MAX_SPEED * 0.75, MAX_SPEED + 1); 
 
   for (int i = 0; i < 8; i++) {
-    go(dir, spd, 16, 8, 1); 
+    go(dir, spd, 16, 24, 1); 
     dir = !dir;
   }
 }
@@ -341,10 +377,10 @@ void orientExpress() {
   draw();
 
   bool dir = true;
-  int spd = random(40, MAX_SPEED + 1);
+  int spd = random(MAX_SPEED * 0.75, MAX_SPEED + 1); 
 
   for (int i = 0; i < 4; i++) {
-    go(dir, spd, 16, 8, 1); 
+    go(dir, spd, 16, 16, 1); 
     dir = !dir;
   }
 }
@@ -358,7 +394,7 @@ void jessicaLovesTrains() {
     int spd = MAX_SPEED;
     go(dir, spd,
        random(20, 60),
-       6,
+       12,
        random(2, 5));
   }
 }
@@ -370,8 +406,8 @@ void longTrainRunning() {
   int spd = random(MAX_SPEED - 10, MAX_SPEED + 1);
 
   for (int i = 0; i < 2; i++) {
-    go(true,  spd, 43, 6, 4);
-    go(false, spd, 43, 6, 4);
+    go(true,  spd, 43, 12, 4);
+    go(false, spd, 43, 12, 4);
   }
 }
 
@@ -381,11 +417,11 @@ void gentleWander() {
 
   for (int i = 0; i < 5; i++) {
     bool dir = (i % 2);
-    int spd = random(28, MAX_SPEED - 5);
+    int spd = random(MAX_SPEED * 0.75, MAX_SPEED + 1); 
     int dips = random(4, 9);
     go(dir, spd,
        random(80, 105),
-       random(2, 6),
+       random(16, 36),
        dips);
   }
 }
@@ -396,9 +432,10 @@ void silverStreak() {
 
   for (int i = 0; i < 4; i++) {
     bool dir = (i % 2);
-    go(dir, random(38, MAX_SPEED),
-       10,
-       6,
+    int spd = random(MAX_SPEED * 0.75, MAX_SPEED + 1); 
+    go(dir, spd,
+       20,
+       18,
        0);
   }
 }
@@ -419,6 +456,12 @@ void setup() {
   u8g2.clearBuffer();   
 
   Serial.println("Display initialized.");
+
+  Serial.println("spark the traffic light.");
+
+  pinMode(RED_PIN, OUTPUT);
+  pinMode(YEL_PIN, OUTPUT);
+  pinMode(GRN_PIN, OUTPUT);
 
   Serial.println("BOOT");
 }
@@ -464,12 +507,18 @@ void draw() {
 
     u8g2.setFont(u8g2_font_ncenB18_tr);
     u8g2.drawStr(55, 48, "MPH");
-    const char* dir = lastDirection ? "FORWARD" : "REVERSE";
+
+    const char* statusStr;
+    if (globalCurrentSpeed == 0) {
+      statusStr = "HALTED";
+    } else {
+      statusStr = lastDirection ? "FORWARD" : "REVERSE";
+    }
     u8g2.setFont(u8g2_font_7x13_tr);
     u8g2.drawStr(
       58,
       26,
-      dir
+      statusStr
     );
 
     u8g2.setDrawColor(1);
