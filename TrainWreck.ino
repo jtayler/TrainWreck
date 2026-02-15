@@ -5,10 +5,10 @@
 #define DC_PIN   9
 #define RST_PIN  8
 
-//U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, CS_PIN, DC_PIN, RST_PIN);
+// --- display driver ---
 U8G2_SH1106_128X64_NONAME_1_4W_HW_SPI u8g2(U8G2_R0, 10, 9, 8);
-// -------- pins --------
 
+// -------- pins --------
 const int IR_PIN = A0;
 const int IR_THRESHOLD = 420;
 
@@ -19,47 +19,37 @@ const int RED_PIN = 2;
 const int YEL_PIN = 3;
 const int GRN_PIN = 4;
 
-// -------- tuning --------
+// -------- tuning ---------
 const int MAX_SPEED   = 180; 
 const int RAMP_STEP   = 5;
 const int RAMP_DELAY  = 5;
-const int MIN_SPEED   = 20;  
+const int MIN_SPEED   = 0;  
 const float MAX_MPH = 72.0;
 
-unsigned long MS_FWD = 180;   
-unsigned long MS_REV = 200;   
+// ------- station ---------
+unsigned long MS_FWD = 0;   
+unsigned long MS_REV = 0;   
 bool sensorEnabled = false;
-
 bool stationArmed = false;
 unsigned long stationTick = 0;
 
-// -------- dip behavior --------
-const int DIP_SPEED = MAX_SPEED * 4 / 9;
-const unsigned long DIP_TIME = 8600; // ms per dip
+// ----- dip behavior -----
+const int DIP_SPEED = MAX_SPEED * 3.6 / 10; // 25MPH
+const unsigned long DIP_TIME = 9000; // ms per dip
 
-// -------- forward declaration --------
+// -------- display --------
+bool lastDirection = true;
+int globalCurrentSpeed = 0;
+char line1[64] = "STATUS";
+char line2[64] = "0 MPH";
+char line3[64] = "READY";
+
 int speedToMph(int pwm) {
   pwm = constrain(pwm, 0, MAX_SPEED);
   return (pwm * MAX_MPH) / MAX_SPEED;
 }
 
-// -------- display --------
-
-bool lastDirection = true;
-int globalCurrentSpeed = 0;
-// Global slots for  3 lines of text
-char line1[64] = "STATUS";
-char line2[64] = "0 MPH";
-char line3[64] = "READY";
-
 // -------- go! --------
-
-void go(bool forward,
-        int speed,
-        unsigned long runTime,
-        unsigned long pauseTime,
-        int dipCount = 0);
-
 void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime, int dipCount) {
   Serial.print("🟢 LOOP ⏱ ");
   Serial.print(runTime);
@@ -116,25 +106,27 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
 }
 
 // -------- signal --------
-
 void signalRed() {
-  //LED A
-  digitalWrite(RED_PIN, HIGH);
   digitalWrite(YEL_PIN, LOW);
   digitalWrite(GRN_PIN, LOW);
+  delay(300);
+
+  digitalWrite(RED_PIN, HIGH);
 }
 
 void signalYellow() {
-  //LED B
   digitalWrite(RED_PIN, LOW);
-  digitalWrite(YEL_PIN, HIGH);
   digitalWrite(GRN_PIN, LOW);
+  delay(300);
+
+  digitalWrite(YEL_PIN, HIGH);
 }
 
 void signalGreen() {
-  //LED C
   digitalWrite(RED_PIN, LOW);
   digitalWrite(YEL_PIN, LOW);
+  delay(300);
+
   digitalWrite(GRN_PIN, HIGH);
 }
 
@@ -151,11 +143,9 @@ void updateSignal(int speed, bool rampUp) {
 }
 
 // -------- motor --------
-
 void writeMotor(bool forward, int pwm) {
   pwm = constrain(pwm, 0, MAX_SPEED);
   globalCurrentSpeed = pwm;
-
 
   if (forward) {
     analogWrite(in1Pin, pwm);
@@ -167,21 +157,19 @@ void writeMotor(bool forward, int pwm) {
 }
 
 // -------- direction --------
-
 void setDirection(bool forward) {
   lastDirection = forward;
 }
 
 // -------- ramp --------
-
 void rampSpeed(int target) {
   static int current = 0;
   
   // RESET: Clear the "Tick" memory every time a new ramp command starts
   stationArmed = false; 
 
-  if (target != 0 && abs(target) < MIN_SPEED) target = 0;
-  target = constrain(target, 0, MAX_SPEED);
+  if (current == 0 && target > 0)
+    current = MIN_SPEED;
   
   // If we are already there, just update the global and leave
   if (target == current) {
@@ -196,6 +184,7 @@ void rampSpeed(int target) {
   // Signal Update
   updateSignal((rampUp ? 1 : current), rampUp);
 
+  // Ramp Loop
   while (current != target) {
     
     // --- STATION DOCKING LOGIC ---
@@ -232,29 +221,22 @@ void rampSpeed(int target) {
       }
     }
 
-    // --- YOUR S-CURVE MATH ---
+    // --- S-CURVE MATH ---
     int progressed = abs(current - start);
     float phase = (delta == 0) ? 1.0 : (float)progressed / delta;
     // This creates the "Bell Curve" for the step size
     int step = max(1, (int)(RAMP_STEP * (0.5 + 1.5 * phase * (1 - phase))));
 
-    // Apply the step
     if (rampUp) {
       current += step;
-      if (current > target) current = target; // Don't overshoot
+      if (current > target) current = target; 
     } else {
       current -= step;
-      if (current < target) current = target; // Don't undershoot
+      if (current < target) current = target; 
     }
 
     // --- OUTPUTS ---
     globalCurrentSpeed = current;
-    
-    // For the Serial Plotter
-    // Serial.print("Speed:");
-    // Serial.println(current);
-
-    // Update Display Strings
     snprintf(line2, sizeof(line2), "%d MPH", speedToMph(current));
     if (target == 0) {
       snprintf(line3, sizeof(line3), "%s STOP", rampUp ? "RAMP TO" : "DOWN TO");
@@ -267,23 +249,15 @@ void rampSpeed(int target) {
     delay(RAMP_DELAY);
   }
 
-  // Final update for the signals
   updateSignal(current, rampUp);
 }
 
 // -------- routes --------
-
 void pelhamRail() {
   snprintf(line1, sizeof(line1), "%s", "Taking Pelham 123");
   draw();
 
-  bool dir = true;
-  int spd = random(MAX_SPEED * 0.75, MAX_SPEED + 1); 
-
-  for (int i = 0; i < 2; i++) {
-    go(dir, spd, 20, 12, 0); 
-    dir = !dir;
-  }
+  go(true, MAX_SPEED, 5, 10, 0); 
 }
 
 void readingRailroad() {
@@ -303,7 +277,7 @@ void grandCentral() {
   draw();
 
   bool dir = true;
-  int spd = random(MAX_SPEED * 0.75, MAX_SPEED + 1); 
+  int spd = random(MAX_SPEED * 0.75, MAX_SPEED); 
 
   for (int i = 0; i < 4; i++) {
     dir = !dir;
@@ -330,7 +304,7 @@ void pennLine() {
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED - 10, 20, 6, 1); 
+    go(dir, MAX_SPEED - 10, 20, 18, 1); 
     dir = !dir;
   }
 }
@@ -341,7 +315,7 @@ void vanderbiltCentral() {
 
   bool dir = true;
 
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < 4; i++) {
     go(dir, MAX_SPEED - 4, 20, 12, 1); 
     dir = !dir;
   }
@@ -364,7 +338,7 @@ void circleOfStops() {
   draw();
 
   bool dir = true;
-  int spd = random(MAX_SPEED * 0.75, MAX_SPEED + 1); 
+  int spd = random(MAX_SPEED * 0.75, MAX_SPEED); 
 
   for (int i = 0; i < 8; i++) {
     go(dir, spd, 16, 24, 1); 
@@ -377,7 +351,7 @@ void orientExpress() {
   draw();
 
   bool dir = true;
-  int spd = random(MAX_SPEED * 0.75, MAX_SPEED + 1); 
+  int spd = random(MAX_SPEED * 0.75, MAX_SPEED); 
 
   for (int i = 0; i < 4; i++) {
     go(dir, spd, 16, 16, 1); 
@@ -385,8 +359,8 @@ void orientExpress() {
   }
 }
 
-void jessicaLovesTrains() {
-  snprintf(line1, sizeof(line1), "%s", "The Jessica Line");
+void jessTrain() {
+  snprintf(line1, sizeof(line1), "%s", "Rio-Jess Express");
   draw();
 
   for (int i = 0; i < 4; i++) {
@@ -394,7 +368,7 @@ void jessicaLovesTrains() {
     int spd = MAX_SPEED;
     go(dir, spd,
        random(20, 60),
-       12,
+       25,
        random(2, 5));
   }
 }
@@ -403,7 +377,7 @@ void longTrainRunning() {
   snprintf(line1, sizeof(line1), "%s", "Long Train Running");
   draw();
 
-  int spd = random(MAX_SPEED - 10, MAX_SPEED + 1);
+    int spd = random(MAX_SPEED * 0.85, MAX_SPEED); 
 
   for (int i = 0; i < 2; i++) {
     go(true,  spd, 43, 12, 4);
@@ -412,13 +386,13 @@ void longTrainRunning() {
 }
 
 void gentleWander() {
-  snprintf(line1, sizeof(line1), "%s", "Union Pacific");
+  snprintf(line1, sizeof(line1), "%s", "Union Pacific R.R.");
   draw();
 
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 15; i++) {
     bool dir = (i % 2);
-    int spd = random(MAX_SPEED * 0.75, MAX_SPEED + 1); 
-    int dips = random(4, 9);
+    int spd = random(MAX_SPEED * 0.65, MAX_SPEED * 0.75); 
+    int dips = random(5, 9);
     go(dir, spd,
        random(80, 105),
        random(16, 36),
@@ -432,8 +406,7 @@ void silverStreak() {
 
   for (int i = 0; i < 4; i++) {
     bool dir = (i % 2);
-    int spd = random(MAX_SPEED * 0.75, MAX_SPEED + 1); 
-    go(dir, spd,
+    go(dir, random(MAX_SPEED * 0.85, MAX_SPEED),
        20,
        18,
        0);
@@ -467,7 +440,6 @@ void setup() {
 }
 
 // -------- draw --------
-
 void toUpper(char* s) {
   for (; *s; s++) {
     if (*s >= 'a' && *s <= 'z') *s -= 32;
@@ -478,8 +450,9 @@ void draw() {
   u8g2.firstPage();
   do {
     u8g2.clearBuffer();
+
+    // ---- TOP CENTERED: TITLE (small, ALL CAPS, long) ----
     toUpper(line1);
-    // ---- TOP: TITLE (small, ALL CAPS, long) ----
     u8g2.setFont(u8g2_font_7x13_tr);
     u8g2.drawStr(
       (128 - u8g2.getStrWidth(line1)) / 2,
@@ -491,14 +464,9 @@ void draw() {
     u8g2.drawBox(0, 14, 128, 36);
 
     u8g2.setDrawColor(0);
-    // u8g2.setFont(u8g2_font_logisoso32_tn);
-    // u8g2.drawStr(10, 48, line2);
-
     u8g2.setFont(u8g2_font_logisoso32_tn);
-
     int numWidth = u8g2.getStrWidth(line2);
     int numRightEdge = 69;
-
     u8g2.drawStr(
       numRightEdge - numWidth,
       48,
@@ -507,7 +475,6 @@ void draw() {
 
     u8g2.setFont(u8g2_font_ncenB18_tr);
     u8g2.drawStr(55, 48, "MPH");
-
     const char* statusStr;
     if (globalCurrentSpeed == 0) {
       statusStr = "HALTED";
@@ -535,19 +502,18 @@ void draw() {
 // -------- loop --------
 void loop() {
   Serial.println("LOOP START");
-  pelhamRail();
   vanderbiltCentral();
+  gentleWander();
+  pelhamRail();
   pennLine();
+  circleOfStops();
   hudsonLine();
   grandCentral();
   readingRailroad();
   silverStreak();
   bAndO();
-  jessicaLovesTrains();
+  jessTrain();
   orientExpress();
   longTrainRunning();
-  circleOfStops();
-  gentleWander();
-  Serial.println("LOOP END");
 }
 
