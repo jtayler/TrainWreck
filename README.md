@@ -1,5 +1,5 @@
 # TrainWreck
-TrainWreck is a Nano-based control app to run a model Z guage train into the ground and off the rails.
+TrainWreck is a Nano-based control app to run a model Z guage train into the ground and off the rails!
 
 This app is a **fully scripted model train control system** with display, signals, smooth motion, and themed routes.
 
@@ -8,15 +8,14 @@ This app is a **fully scripted model train control system** with display, signal
 **1. Smooth S-Curve Acceleration & Braking**
 
 * Custom ramping (non-linear “bell curve” step size).
-* Controlled ramp up / ramp down.
-* No abrupt jumps in speed.
 * MPH conversion from PWM (0–72 MPH scale).
+* Controlled ramp up / ramp down.
 
-**2. Direction Control**
+**2. Easy Speed/Direction Control**
 
 * Forward / Reverse switching.
-* Direction shown on screen.
-* Alternates automatically in route loops.
+* Direction shown on display.
+* Alternates easily in route loops.
 
 **3. Traffic Light Integration**
 
@@ -25,8 +24,7 @@ This app is a **fully scripted model train control system** with display, signal
 * 🟡 Yellow = decelerating, slow leg
 
 **4. OLED Dashboard (128x64 SH1106)**
-Displays:
-
+Display Shows:
 * Route name (top)
 * Large speed readout (MPH)
 * Direction (FORWARD / REVERSE / HALTED)
@@ -35,19 +33,17 @@ Displays:
 Clean, centered layout with inverted speed panel.
 
 **5. Dip Behavior (Speed Drops While Running)**
-
 * Periodic slow segments during runs.
 * Simulates grades, curves, or realism.
 * Adjustable dip count and duration.
 
-**6. Station Docking Logic (IR Sensor Ready)**
-
-* IR sensor trigger.
+**6. Station Docking (IR Sensor)**
+* Automatic station stops always work.
 * Timed crawl hold before full stop.
-* Prevents hard stops at station.
+* Prevents random stop points.
 
 **7. Scripted Route Library**
-Each route defines:
+Each route easily defines fun:
 
 * Direction changes
 * Speed profiles
@@ -82,3 +78,27 @@ It’s a **self-running theatrical train simulator**:
 * Dynamic pacing
 
 It behaves like a miniature dispatch system — not just a motor controller.
+
+### Stuff You Need
+
+Total Parts: $30-$70 + Bring Your Own Train Set
+
+Parts:
+Arduino Nano V3.0 (about ~$10)
+https://www.amazon.com/dp/B0713XK923
+
+QRE1113 Analog Infrared Reflective Sensor Module (about $1.25)
+https://www.aliexpress.us/item/3256809752874660.html
+
+DRV8871 Motor Controller (about $1.50)
+https://www.amazon.com/dp/B0DGFFGLF1
+
+SSH1106 OLED LCD Display (about $6.50)
+https://www.amazon.com/dp/B01N1LZT8L
+
+ULN2003 LED Controller (about ~$3–$7)
+https://www.amazon.com/dp/B07P5C2KWX
+
+Toy LED Traffic light (around $20–$40)
+https://www.amazon.com/dp/B098H3923S
+
