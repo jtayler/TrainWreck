@@ -14,10 +14,17 @@ const int IR_THRESHOLD = 420;
 
 const int in1Pin = 5; 
 const int in2Pin = 6; 
+//const int in1Pin = 7; 
+//const int in2Pin = A2; 
 
 const int RED_PIN = 2;
 const int YEL_PIN = 3;
 const int GRN_PIN = 4;
+
+const int STN1_PIN = A1;
+const int STN2_PIN = A2;
+const int STN3_PIN = A3;
+const int STN4_PIN = A4;
 
 // -------- tuning ---------
 const int MAX_SPEED   = 180; 
@@ -36,6 +43,7 @@ unsigned long stationTick = 0;
 // ----- dip behavior -----
 const int DIP_SPEED = MAX_SPEED * 3.6 / 10; // 25MPH
 const unsigned long DIP_TIME = 9000; // ms per dip
+unsigned long upcomingPauseMs = 0;
 
 // -------- display --------
 bool lastDirection = true;
@@ -95,14 +103,29 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
     delay(runTime * 1000);
 
   }
-  rampSpeed(0);
+  upcomingPauseMs = pauseTime * 1000;
   Serial.print("🛑 STOP ⏱ ");
   Serial.print(pauseTime);
   Serial.println("s");
   snprintf(line3, sizeof(line3), "%s %ds", "FULL STOP", pauseTime);
   draw();
-  delay(pauseTime * 1000);
 
+rampSpeed(0);
+
+unsigned long pauseMs = pauseTime * 1000UL;
+unsigned long blinkMs = min(3000UL, pauseMs);
+unsigned long steadyMs = pauseMs - blinkMs;
+
+allOn(); 
+draw();
+if (steadyMs) delay(steadyMs);
+
+blinkFor(blinkMs);
+
+allOn(); 
+draw();
+
+fadeToBlackMs(3000);
 }
 
 // -------- signal --------
@@ -142,17 +165,98 @@ void updateSignal(int speed, bool rampUp) {
   }
 }
 
+// -------- lights --------
+
+void allOn() {
+  //Serial.print("ALL ON! ");
+  digitalWrite(STN1_PIN, HIGH);
+  digitalWrite(STN2_PIN, HIGH);
+  digitalWrite(STN3_PIN, HIGH);
+  digitalWrite(STN4_PIN, HIGH);
+}
+
+void halfOn() {
+  //Serial.print("HALF ON! ");
+  digitalWrite(STN1_PIN, LOW);
+  digitalWrite(STN3_PIN, LOW);
+  digitalWrite(STN2_PIN, HIGH);
+  digitalWrite(STN4_PIN, HIGH);
+}
+
+void blinkFor(unsigned long ms) {
+  unsigned long t0 = millis();
+  while (millis() - t0 < ms) {
+    alternateBlink(millis());
+    draw();
+    delay(10);
+  }
+}
+
+void fadeToBlackMs(unsigned long ms) {
+  allOn();
+  unsigned long step = ms / 4;
+  digitalWrite(STN3_PIN, LOW); draw(); delay(step);
+  digitalWrite(STN1_PIN, LOW); draw(); delay(step);
+  digitalWrite(STN4_PIN, LOW); draw(); delay(step);
+  digitalWrite(STN2_PIN, LOW); draw(); delay(ms - step * 3);
+}
+
+void alternateBlink(unsigned long now) {
+  static unsigned long lastToggle = 0;
+  static bool phase = false;
+
+  if (now - lastToggle >= 250) {
+    lastToggle = now;
+    phase = !phase;
+    //Serial.print("BLINKING! ");
+
+    if (phase) {
+      digitalWrite(STN1_PIN, LOW);
+      digitalWrite(STN3_PIN, LOW);
+      digitalWrite(STN2_PIN, HIGH);
+      digitalWrite(STN4_PIN, HIGH);
+    } else {
+      digitalWrite(STN2_PIN, LOW);
+      digitalWrite(STN4_PIN, LOW);
+      digitalWrite(STN1_PIN, HIGH);
+      digitalWrite(STN3_PIN, HIGH);
+    }
+  }
+}
+
+void fadeToBlack(unsigned long now) {
+  static unsigned long startTime = 0;
+  static bool started = false;
+
+  if (!started) {
+    startTime = now;
+    started = true;
+  }
+
+  unsigned long elapsed = now - startTime;
+
+  if (elapsed > 0)  digitalWrite(STN3_PIN, LOW);
+  if (elapsed > 700) digitalWrite(STN1_PIN, LOW);
+  if (elapsed > 1400) digitalWrite(STN4_PIN, LOW);
+  if (elapsed > 2100) digitalWrite(STN2_PIN, LOW);
+
+  if (elapsed > 3000) {
+    //Serial.print("FADE TO BLACK! ");
+    started = false;
+  }
+}
+
 // -------- motor --------
 void writeMotor(bool forward, int pwm) {
   pwm = constrain(pwm, 0, MAX_SPEED);
   globalCurrentSpeed = pwm;
 
   if (forward) {
-    analogWrite(in1Pin, pwm);
-    digitalWrite(in2Pin, LOW);
+    digitalWrite(in2Pin, LOW); // This stays Digital (The Ground)
+    analogWrite(in1Pin, pwm);  // This uses PWM (The Speed)
   } else {
-    digitalWrite(in1Pin, LOW);
-    analogWrite(in2Pin, pwm);
+    digitalWrite(in1Pin, LOW); // This stays Digital (The Ground)
+    analogWrite(in2Pin, pwm);  // This uses PWM (The Speed)
   }
 }
 
@@ -164,7 +268,8 @@ void setDirection(bool forward) {
 // -------- ramp --------
 void rampSpeed(int target) {
   static int current = 0;
-  
+  unsigned long rampStart = millis();
+
   // RESET: Clear the "Tick" memory every time a new ramp command starts
   stationArmed = false; 
 
@@ -187,40 +292,34 @@ void rampSpeed(int target) {
   // Ramp Loop
   while (current != target) {
     
-    // --- STATION DOCKING LOGIC ---
-    if (sensorEnabled && target == 0) {
+  unsigned long elapsed = millis() - rampStart;
+
+  // --- STATION DOCKING LOGIC ---
+  if (sensorEnabled && target == 0) {
       int v = analogRead(IR_PIN);
 
-      // Look for the IR sensor trip
       if (!stationArmed && v > IR_THRESHOLD) {
-        stationArmed = true;
-        stationTick = millis();
+          stationArmed = true;
+          stationTick = millis();
       }
 
       if (stationArmed) {
-        unsigned long waitMs = (lastDirection > 0) ? MS_FWD : MS_REV;
-        
-        // If the timer is still running...
-        if (millis() - stationTick < waitMs) {
-          // If we've reached our reliable crawl speed, HOLD IT
-          if (current <= DIP_SPEED) {
-            current = DIP_SPEED; 
-            globalCurrentSpeed = current;
-            writeMotor(lastDirection, current);
-            
-            // Keep the display and serial alive while we wait
-            // Serial.print("Speed:"); Serial.println(current); 
-            draw();
-            delay(RAMP_DELAY);
-            //continue; // Skip the "slowing down" math below
-          }
-        } else {
-          // Timer finished! Let the ramp drop the rest of the way to 0
-          stationArmed = false; 
-        }
-      }
-    }
+          unsigned long waitMs = lastDirection ? MS_FWD : MS_REV;
 
+          if (millis() - stationTick < waitMs) {
+              if (current <= DIP_SPEED) {
+                  current = DIP_SPEED;
+                  globalCurrentSpeed = current;
+                  writeMotor(lastDirection, current);
+                  draw();
+                  delay(RAMP_DELAY);
+              }
+          } else {
+              stationArmed = false;
+          }
+      }
+  }
+    
     // --- S-CURVE MATH ---
     int progressed = abs(current - start);
     float phase = (delta == 0) ? 1.0 : (float)progressed / delta;
@@ -419,19 +518,23 @@ void setup() {
 
   Serial.println("Serial Established.");
 
-  Serial.println("Set pin modes early...");
+  Serial.println("Motor Controller Pin Modes");
   pinMode(in1Pin, OUTPUT);
   pinMode(in2Pin, OUTPUT);
   digitalWrite(in1Pin, LOW);
   digitalWrite(in2Pin, LOW);
 
+  Serial.println("Initialize Display Driver.");
   u8g2.begin(); 
   u8g2.clearBuffer();   
 
-  Serial.println("Display initialized.");
+  Serial.println("Station Light Setup.");
+  pinMode(STN1_PIN, OUTPUT);
+  pinMode(STN2_PIN, OUTPUT);
+  pinMode(STN3_PIN, OUTPUT);
+  pinMode(STN4_PIN, OUTPUT);
 
-  Serial.println("spark the traffic light.");
-
+  Serial.println("Traffic Light Setup.");
   pinMode(RED_PIN, OUTPUT);
   pinMode(YEL_PIN, OUTPUT);
   pinMode(GRN_PIN, OUTPUT);
@@ -502,9 +605,9 @@ void draw() {
 // -------- loop --------
 void loop() {
   Serial.println("LOOP START");
+  pelhamRail();
   vanderbiltCentral();
   gentleWander();
-  pelhamRail();
   pennLine();
   circleOfStops();
   hudsonLine();
