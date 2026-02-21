@@ -27,7 +27,7 @@ const int STN3_PIN = A3;
 const int STN4_PIN = A4;
 
 // -------- tuning ---------
-const int MAX_SPEED   = 180; 
+const int MAX_SPEED   = 160; 
 const int RAMP_STEP   = 5;
 const int RAMP_DELAY  = 5;
 const int MIN_SPEED   = 0;  
@@ -52,6 +52,10 @@ char line1[64] = "STATUS";
 char line2[64] = "0 MPH";
 char line3[64] = "READY";
 
+enum StationState { IDLE, ARRIVING, AT_STATION, DEPARTING, COOL_DOWN };
+StationState currentStationState = IDLE;
+unsigned long stateStartTime = 0;
+
 int speedToMph(int pwm) {
   pwm = constrain(pwm, 0, MAX_SPEED);
   return (pwm * MAX_MPH) / MAX_SPEED;
@@ -59,9 +63,9 @@ int speedToMph(int pwm) {
 
 // -------- go! --------
 void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime, int dipCount) {
-  Serial.print("🟢 LOOP ⏱ ");
-  Serial.print(runTime);
-  Serial.println("s");
+  Serial.print("LOOP RAMP ⏱ ");
+  //Serial.print(runTime);
+  //Serial.println("s");
 
   setDirection(forward);
   rampSpeed(speed);
@@ -110,22 +114,22 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
   snprintf(line3, sizeof(line3), "%s %ds", "FULL STOP", pauseTime);
   draw();
 
-rampSpeed(0);
+  rampSpeed(0); 
 
-unsigned long pauseMs = pauseTime * 1000UL;
-unsigned long blinkMs = min(3000UL, pauseMs);
-unsigned long steadyMs = pauseMs - blinkMs;
+  // Start the "At Station" phase
+  stateStartTime = millis();
 
-allOn(); 
-draw();
-if (steadyMs) delay(steadyMs);
+  unsigned long pauseMs = pauseTime * 1000UL;
 
-blinkFor(blinkMs);
+  while (millis() - stateStartTime < pauseMs) {
+    updateStationLights(); 
+    draw();
+    delay(10);
+  }
 
-allOn(); 
-draw();
-
-fadeToBlackMs(3000);
+  // Now trigger the departure blink before the next move
+  currentStationState = DEPARTING;
+  stateStartTime = millis();
 }
 
 // -------- signal --------
@@ -175,23 +179,6 @@ void allOn() {
   digitalWrite(STN4_PIN, HIGH);
 }
 
-void halfOn() {
-  //Serial.print("HALF ON! ");
-  digitalWrite(STN1_PIN, LOW);
-  digitalWrite(STN3_PIN, LOW);
-  digitalWrite(STN2_PIN, HIGH);
-  digitalWrite(STN4_PIN, HIGH);
-}
-
-void blinkFor(unsigned long ms) {
-  unsigned long t0 = millis();
-  while (millis() - t0 < ms) {
-    alternateBlink(millis());
-    draw();
-    delay(10);
-  }
-}
-
 void fadeToBlackMs(unsigned long ms) {
   allOn();
   unsigned long step = ms / 4;
@@ -224,25 +211,40 @@ void alternateBlink(unsigned long now) {
   }
 }
 
-void fadeToBlack(unsigned long now) {
-  static unsigned long startTime = 0;
-  static bool started = false;
+void updateStationLights() {
+  unsigned long elapsed = millis() - stateStartTime;
 
-  if (!started) {
-    startTime = now;
-    started = true;
-  }
+  switch (currentStationState) {
+    case ARRIVING:
+      alternateBlink(millis()); // Blink for arrival
+      if (elapsed >= 3000) currentStationState = AT_STATION; 
+      break;
 
-  unsigned long elapsed = now - startTime;
+    case AT_STATION:
+      allOn(); // Solid lights while stopped
+      break;
 
-  if (elapsed > 0)  digitalWrite(STN3_PIN, LOW);
-  if (elapsed > 700) digitalWrite(STN1_PIN, LOW);
-  if (elapsed > 1400) digitalWrite(STN4_PIN, LOW);
-  if (elapsed > 2100) digitalWrite(STN2_PIN, LOW);
+    case DEPARTING:
+      alternateBlink(millis()); // Blink before leaving
+      if (elapsed >= 3000) currentStationState = COOL_DOWN;
+      break;
 
-  if (elapsed > 3000) {
-    //Serial.print("FADE TO BLACK! ");
-    started = false;
+    case COOL_DOWN:
+      // Keep lights on for 3 seconds after train leaves
+      allOn(); 
+      if (elapsed >= 3000) {
+        fadeToBlackMs(1000); 
+        currentStationState = IDLE;
+      }
+      break;
+
+    case IDLE:
+      // All station pins LOW
+      digitalWrite(STN1_PIN, LOW);
+      digitalWrite(STN2_PIN, LOW);
+      digitalWrite(STN3_PIN, LOW);
+      digitalWrite(STN4_PIN, LOW);
+      break;
   }
 }
 
@@ -312,6 +314,7 @@ void rampSpeed(int target) {
                   globalCurrentSpeed = current;
                   writeMotor(lastDirection, current);
                   draw();
+                  updateStationLights();  
                   delay(RAMP_DELAY);
               }
           } else {
