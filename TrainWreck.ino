@@ -10,7 +10,7 @@ U8G2_SH1106_128X64_NONAME_1_4W_HW_SPI u8g2(U8G2_R0, 10, 9, 8);
 
 // -------- pins --------
 const int IR_PIN = A0;
-const int IR_THRESHOLD = 420;
+const int IR_THRESHOLD = 200;
 
 const int in1Pin = 5; 
 const int in2Pin = 6; 
@@ -34,9 +34,9 @@ const int MIN_SPEED   = 0;
 const float MAX_MPH = 72.0;
 
 // ------- station ---------
-unsigned long MS_FWD = 0;   
-unsigned long MS_REV = 0;   
-bool sensorEnabled = false;
+unsigned long MS_FWD = 2700;   
+unsigned long MS_REV = 750;   
+bool sensorEnabled = true;
 bool stationArmed = false;
 unsigned long stationTick = 0;
 
@@ -63,7 +63,7 @@ int speedToMph(int pwm) {
 
 // -------- go! --------
 void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime, int dipCount) {
-  Serial.print("LOOP RAMP ⏱ ");
+  Serial.println("GO!");
   //Serial.print(runTime);
   //Serial.println("s");
 
@@ -114,8 +114,9 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
   snprintf(line3, sizeof(line3), "%s %ds", "FULL STOP", pauseTime);
   draw();
 
+setStationState(ARRIVING);
   rampSpeed(0); 
-
+setStationState(AT_STATION);
   // Start the "At Station" phase
   stateStartTime = millis();
 
@@ -126,10 +127,7 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
     draw();
     //delay(10);
   }
-
-  // Now trigger the departure blink before the next move
-  currentStationState = DEPARTING;
-  stateStartTime = millis();
+setStationState(DEPARTING);
 }
 
 // -------- signal --------
@@ -180,11 +178,10 @@ void allOn() {
 }
 
 void fadeToBlackMs(unsigned long ms) {
-  allOn();
   unsigned long step = ms / 4;
-  digitalWrite(STN3_PIN, LOW); draw(); //delay(step);
-  digitalWrite(STN1_PIN, LOW); draw(); //delay(step);
-  digitalWrite(STN4_PIN, LOW); draw(); //delay(step);
+  digitalWrite(STN3_PIN, LOW); draw(); delay(step);
+  digitalWrite(STN1_PIN, LOW); draw(); delay(step);
+  digitalWrite(STN4_PIN, LOW); draw(); delay(step);
   digitalWrite(STN2_PIN, LOW); draw(); //delay(ms - step * 3);
 }
 
@@ -209,6 +206,12 @@ void alternateBlink(unsigned long now) {
       digitalWrite(STN3_PIN, HIGH);
     }
   }
+}
+
+void setStationState(StationState s) {
+  if (currentStationState == s) return;
+  currentStationState = s;
+  stateStartTime = millis();
 }
 
 void updateStationLights() {
@@ -270,15 +273,14 @@ void setDirection(bool forward) {
 // -------- ramp --------
 void rampSpeed(int target) {
   static int current = 0;
-  unsigned long rampStart = millis();
+static bool lastSensorState = false;
+static bool dockedThisStop = false;
+if (target == 0) stationArmed = false;
 
-  // RESET: Clear the "Tick" memory every time a new ramp command starts
-  stationArmed = false; 
-
+if (target != 0) dockedThisStop = false;
   if (current == 0 && target > 0)
     current = MIN_SPEED;
-  
-  // If we are already there, just update the global and leave
+
   if (target == current) {
     globalCurrentSpeed = current;
     return;
@@ -288,63 +290,74 @@ void rampSpeed(int target) {
   int delta = abs(target - start);
   bool rampUp = target > current;
 
-  // Signal Update
   updateSignal((rampUp ? 1 : current), rampUp);
 
-  // Ramp Loop
   while (current != target) {
-    
-  unsigned long elapsed = millis() - rampStart;
+    updateStationLights();
 
-  // --- STATION DOCKING LOGIC ---
-  if (sensorEnabled && target == 0) {
-      int v = analogRead(IR_PIN);
-
-      if (!stationArmed && v > IR_THRESHOLD) {
-          stationArmed = true;
-          stationTick = millis();
-      }
-
-      if (stationArmed) {
-          unsigned long waitMs = lastDirection ? MS_FWD : MS_REV;
-
-          if (millis() - stationTick < waitMs) {
-              if (current <= DIP_SPEED) {
-                  current = DIP_SPEED;
-                  globalCurrentSpeed = current;
-                  writeMotor(lastDirection, current);
-                  draw();
-                  updateStationLights();  
-                  delay(RAMP_DELAY);
-              }
-          } else {
-              stationArmed = false;
-          }
-      }
+    // ---- DOCKING LOGIC ----
+    if (sensorEnabled && target == 0  && !dockedThisStop) {
+  // HARD WAIT FOR SENSOR EDGE
+  while (stationArmed == false) {
+    int v = analogRead(IR_PIN);
+    if (v < IR_THRESHOLD) {
+      stationTick = millis();
+      setStationState(ARRIVING);
+      Serial.print(v);
+      Serial.println("TICK LOCKED");
+      stationArmed = true;
+      break;
+    }
   }
-    
-    // --- S-CURVE MATH ---
+
+if (sensorEnabled && target == 0 && !dockedThisStop) {
+
+  // wait for tick once
+  while (!stationArmed) {
+    int v = analogRead(IR_PIN);
+    if (v < IR_THRESHOLD) {
+      stationArmed = true;
+      stationTick = millis();
+      Serial.print(v);
+      Serial.println(" TICK LOCKED");
+    }
+  }
+
+  unsigned long waitMs = lastDirection ? MS_FWD : MS_REV;
+  Serial.print("WAIT ");
+  Serial.println(waitMs);
+  delay(waitMs);              // <-- the one and only delay
+
+  dockedThisStop = true;      // <-- prevent re-run
+  Serial.println("DOCK COMPLETE");
+}
+      
+    }
+
+    // ---- S-CURVE RAMP ----
     int progressed = abs(current - start);
     float phase = (delta == 0) ? 1.0 : (float)progressed / delta;
-    // This creates the "Bell Curve" for the step size
     int step = max(1, (int)(RAMP_STEP * (0.5 + 1.5 * phase * (1 - phase))));
 
     if (rampUp) {
       current += step;
-      if (current > target) current = target; 
+      if (current > target) current = target;
     } else {
       current -= step;
-      if (current < target) current = target; 
+      if (current < target) current = target;
     }
 
-    // --- OUTPUTS ---
+    // ---- OUTPUT ----
     globalCurrentSpeed = current;
+
     snprintf(line2, sizeof(line2), "%d MPH", speedToMph(current));
-    if (target == 0) {
-      snprintf(line3, sizeof(line3), "%s STOP", rampUp ? "RAMP TO" : "DOWN TO");
-    } else {
-      snprintf(line3, sizeof(line3), "%s %d MPH", rampUp ? "RAMP TO" : "DOWN TO", speedToMph(target));
-    }
+
+    if (target == 0)
+      snprintf(line3, sizeof(line3), "DOWN TO STOP");
+    else
+      snprintf(line3, sizeof(line3), "%s %d MPH",
+               rampUp ? "RAMP TO" : "DOWN TO",
+               speedToMph(target));
 
     writeMotor(lastDirection, current);
     draw();
@@ -359,16 +372,16 @@ void pelhamRail() {
   snprintf(line1, sizeof(line1), "%s", "Taking Pelham 123");
   draw();
 
-  go(true, MAX_SPEED, 5, 1, 0); 
-  go(false, MAX_SPEED, 5, 1, 0); 
-  go(true, MAX_SPEED, 5, 1, 0); 
-  go(false, MAX_SPEED, 5, 1, 0); 
-  go(true, MAX_SPEED, 5, 1, 0); 
-  go(false, MAX_SPEED, 5, 1, 0); 
-  go(true, MAX_SPEED, 5, 1, 0); 
-  go(false, MAX_SPEED, 5, 1, 0); 
-  go(true, MAX_SPEED, 5, 1, 0); 
-  go(false, MAX_SPEED, 5, 1, 0); 
+  // go(true, MAX_SPEED, 5, 1, 0); 
+  // go(false, MAX_SPEED, 5, 1, 0); 
+  // go(true, MAX_SPEED, 5, 1, 0); 
+  // go(false, MAX_SPEED, 5, 1, 0); 
+  // go(true, MAX_SPEED, 5, 1, 0); 
+  // go(false, MAX_SPEED, 5, 1, 0); 
+  // go(true, MAX_SPEED, 5, 1, 0); 
+  // go(false, MAX_SPEED, 5, 1, 0); 
+  // go(true, MAX_SPEED, 5, 1, 0); 
+  go(false, MAX_SPEED, 10, 10, 0); 
 }
 
 void readingRailroad() {
@@ -551,6 +564,9 @@ void setup() {
   pinMode(YEL_PIN, OUTPUT);
   pinMode(GRN_PIN, OUTPUT);
 
+  Serial.println("IR Sensor Setup.");
+  pinMode(IR_PIN, INPUT);
+
   Serial.println("BOOT");
 }
 
@@ -594,7 +610,7 @@ void draw() {
     if (globalCurrentSpeed == 0) {
       statusStr = "HALTED";
     } else {
-      statusStr = lastDirection ? "FORWARD" : "REVERSE";
+      statusStr = lastDirection ? "UPTOWN" : "DOWNTOWN";
     }
     u8g2.setFont(u8g2_font_7x13_tr);
     u8g2.drawStr(
