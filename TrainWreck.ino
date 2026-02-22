@@ -29,7 +29,7 @@ const int STN4_PIN = A4;
 // -------- tuning ---------
 const int MAX_SPEED   = 160; 
 const int RAMP_STEP   = 5;
-const int RAMP_DELAY  = 5;
+const int RAMP_DELAY  = 1;
 const int MIN_SPEED   = 0;  
 const float MAX_MPH = 72.0;
 
@@ -124,7 +124,7 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
   while (millis() - stateStartTime < pauseMs) {
     updateStationLights(); 
     draw();
-    delay(10);
+    //delay(10);
   }
 
   // Now trigger the departure blink before the next move
@@ -136,7 +136,7 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
 void signalRed() {
   digitalWrite(YEL_PIN, LOW);
   digitalWrite(GRN_PIN, LOW);
-  delay(300);
+  //delay(300);
 
   digitalWrite(RED_PIN, HIGH);
 }
@@ -144,7 +144,7 @@ void signalRed() {
 void signalYellow() {
   digitalWrite(RED_PIN, LOW);
   digitalWrite(GRN_PIN, LOW);
-  delay(300);
+  //delay(300);
 
   digitalWrite(YEL_PIN, HIGH);
 }
@@ -152,7 +152,7 @@ void signalYellow() {
 void signalGreen() {
   digitalWrite(RED_PIN, LOW);
   digitalWrite(YEL_PIN, LOW);
-  delay(300);
+  //delay(300);
 
   digitalWrite(GRN_PIN, HIGH);
 }
@@ -182,10 +182,10 @@ void allOn() {
 void fadeToBlackMs(unsigned long ms) {
   allOn();
   unsigned long step = ms / 4;
-  digitalWrite(STN3_PIN, LOW); draw(); delay(step);
-  digitalWrite(STN1_PIN, LOW); draw(); delay(step);
-  digitalWrite(STN4_PIN, LOW); draw(); delay(step);
-  digitalWrite(STN2_PIN, LOW); draw(); delay(ms - step * 3);
+  digitalWrite(STN3_PIN, LOW); draw(); //delay(step);
+  digitalWrite(STN1_PIN, LOW); draw(); //delay(step);
+  digitalWrite(STN4_PIN, LOW); draw(); //delay(step);
+  digitalWrite(STN2_PIN, LOW); draw(); //delay(ms - step * 3);
 }
 
 void alternateBlink(unsigned long now) {
@@ -359,7 +359,16 @@ void pelhamRail() {
   snprintf(line1, sizeof(line1), "%s", "Taking Pelham 123");
   draw();
 
-  go(true, MAX_SPEED, 5, 10, 0); 
+  go(true, MAX_SPEED, 5, 1, 0); 
+  go(false, MAX_SPEED, 5, 1, 0); 
+  go(true, MAX_SPEED, 5, 1, 0); 
+  go(false, MAX_SPEED, 5, 1, 0); 
+  go(true, MAX_SPEED, 5, 1, 0); 
+  go(false, MAX_SPEED, 5, 1, 0); 
+  go(true, MAX_SPEED, 5, 1, 0); 
+  go(false, MAX_SPEED, 5, 1, 0); 
+  go(true, MAX_SPEED, 5, 1, 0); 
+  go(false, MAX_SPEED, 5, 1, 0); 
 }
 
 void readingRailroad() {
