@@ -34,8 +34,8 @@ const int MIN_SPEED   = 0;
 const float MAX_MPH = 72.0;
 
 // ------- station ---------
-unsigned long MS_FWD = 4960;   
-unsigned long MS_REV = 2960;   //perfecto. wow. see if that lasts.
+unsigned long MS_FWD = 230;   
+unsigned long MS_REV = 3200;
 bool sensorEnabled = true;
 bool stationArmed = false;
 unsigned long stationTick = 0;
@@ -112,23 +112,26 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
   snprintf(line3, sizeof(line3), "%s %ds", "FULL STOP", pauseTime);
   draw();
 
-setStationState(ARRIVING);
   rampSpeed(0); 
-setStationState(AT_STATION);
+  setStationState(AT_STATION);
   // Start the "At Station" phase
   stateStartTime = millis();
 
   unsigned long pauseMs = pauseTime * 1000UL;
 
   snprintf(line3, sizeof(line3), "%s %ds", "AT STATION", pauseTime);
-draw();
 
   while (millis() - stateStartTime < pauseMs) {
-    updateStationLights(); 
     draw();
-    //delay(10);
+    updateStationLights(); 
   }
-setStationState(DEPARTING);
+  setStationState(DEPARTING);
+  updateStationLights(); 
+  snprintf(line3, sizeof(line3), "%s", "NOW DEPARTING");
+  draw();
+  delay(3000);
+  draw();
+  updateStationLights(); 
 }
 
 // -------- signal --------
@@ -179,11 +182,11 @@ void allOn() {
 }
 
 void fadeToBlackMs(unsigned long ms) {
-  unsigned long step = ms / 4;
-  digitalWrite(STN3_PIN, LOW); draw(); delay(step);
-  digitalWrite(STN1_PIN, LOW); draw(); delay(step);
-  digitalWrite(STN4_PIN, LOW); draw(); delay(step);
-  digitalWrite(STN2_PIN, LOW); draw(); //delay(ms - step * 3);
+  unsigned long step = ms / 3;
+  digitalWrite(STN3_PIN, LOW); draw(); draw(); delay(step);
+  digitalWrite(STN1_PIN, LOW); draw(); draw(); delay(step);
+  digitalWrite(STN4_PIN, LOW); draw(); draw(); delay(step);
+  digitalWrite(STN2_PIN, LOW); draw(); draw();
 }
 
 void alternateBlink(unsigned long now) {
@@ -197,14 +200,14 @@ void alternateBlink(unsigned long now) {
 
     if (phase) {
       digitalWrite(STN1_PIN, LOW);
-      digitalWrite(STN3_PIN, LOW);
-      digitalWrite(STN2_PIN, HIGH);
+      digitalWrite(STN2_PIN, LOW);
+      digitalWrite(STN3_PIN, HIGH);
       digitalWrite(STN4_PIN, HIGH);
     } else {
-      digitalWrite(STN2_PIN, LOW);
-      digitalWrite(STN4_PIN, LOW);
       digitalWrite(STN1_PIN, HIGH);
-      digitalWrite(STN3_PIN, HIGH);
+      digitalWrite(STN2_PIN, HIGH);
+      digitalWrite(STN3_PIN, LOW);
+      digitalWrite(STN4_PIN, LOW);
     }
   }
 }
@@ -230,14 +233,14 @@ void updateStationLights() {
 
     case DEPARTING:
       alternateBlink(millis()); // Blink before leaving
-      if (elapsed >= 3000) currentStationState = COOL_DOWN;
+      if (elapsed >= 5000) currentStationState = COOL_DOWN;
       break;
 
     case COOL_DOWN:
       // Keep lights on for 3 seconds after train leaves
       allOn(); 
       if (elapsed >= 3000) {
-        fadeToBlackMs(1000); 
+        fadeToBlackMs(2000); 
         currentStationState = IDLE;
       }
       break;
@@ -298,13 +301,11 @@ if (target != 0) dockedThisStop = false;
 
     // ---- DOCKING LOGIC ----
     if (sensorEnabled && target == 0  && !dockedThisStop && current < 40) {
-  // HARD WAIT FOR SENSOR EDGE
-      Serial.println("HARD WAIT FOR SENSOR EDGE");
+    Serial.println("HARD WAIT FOR SENSOR EDGE");
   while (stationArmed == false) {
     int v = analogRead(IR_PIN);
     if (v < IR_THRESHOLD) {
       stationTick = millis();
-      setStationState(ARRIVING);
       Serial.print(v);
       Serial.println(" TICK LOCKED");
       stationArmed = true;
@@ -324,6 +325,9 @@ if (sensorEnabled && target == 0 && !dockedThisStop) {
       Serial.println(" TICK LOCKED");
     }
   }
+      setStationState(ARRIVING);
+      snprintf(line3, sizeof(line3), "%s", "ARRIVING NOW");
+      draw();
 
   unsigned long waitMs = lastDirection ? MS_FWD : MS_REV;
   Serial.print("WAIT ");
