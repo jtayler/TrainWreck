@@ -34,16 +34,15 @@ const int MIN_SPEED   = 0;
 const float MAX_MPH = 72.0;
 
 // ------- station ---------
-unsigned long MS_FWD = 2700;   
-unsigned long MS_REV = 750;   
+unsigned long MS_FWD = 4960;   
+unsigned long MS_REV = 2960;   //perfecto. wow. see if that lasts.
 bool sensorEnabled = true;
 bool stationArmed = false;
 unsigned long stationTick = 0;
 
 // ----- dip behavior -----
 const int DIP_SPEED = MAX_SPEED * 3.6 / 10; // 25MPH
-const unsigned long DIP_TIME = 9000; // ms per dip
-unsigned long upcomingPauseMs = 0;
+const unsigned long DIP_TIME = 4000; // ms per dip
 
 // -------- display --------
 bool lastDirection = true;
@@ -107,7 +106,6 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
     delay(runTime * 1000);
 
   }
-  upcomingPauseMs = pauseTime * 1000;
   Serial.print("🛑 STOP ⏱ ");
   Serial.print(pauseTime);
   Serial.println("s");
@@ -121,6 +119,9 @@ setStationState(AT_STATION);
   stateStartTime = millis();
 
   unsigned long pauseMs = pauseTime * 1000UL;
+
+  snprintf(line3, sizeof(line3), "%s %ds", "AT STATION", pauseTime);
+draw();
 
   while (millis() - stateStartTime < pauseMs) {
     updateStationLights(); 
@@ -296,15 +297,16 @@ if (target != 0) dockedThisStop = false;
     updateStationLights();
 
     // ---- DOCKING LOGIC ----
-    if (sensorEnabled && target == 0  && !dockedThisStop) {
+    if (sensorEnabled && target == 0  && !dockedThisStop && current < 40) {
   // HARD WAIT FOR SENSOR EDGE
+      Serial.println("HARD WAIT FOR SENSOR EDGE");
   while (stationArmed == false) {
     int v = analogRead(IR_PIN);
     if (v < IR_THRESHOLD) {
       stationTick = millis();
       setStationState(ARRIVING);
       Serial.print(v);
-      Serial.println("TICK LOCKED");
+      Serial.println(" TICK LOCKED");
       stationArmed = true;
       break;
     }
@@ -353,7 +355,9 @@ if (sensorEnabled && target == 0 && !dockedThisStop) {
     snprintf(line2, sizeof(line2), "%d MPH", speedToMph(current));
 
     if (target == 0)
-      snprintf(line3, sizeof(line3), "DOWN TO STOP");
+      updateSignal(current, rampUp);
+
+      //snprintf(line3, sizeof(line3), "DOWN TO STOP");
     else
       snprintf(line3, sizeof(line3), "%s %d MPH",
                rampUp ? "RAMP TO" : "DOWN TO",
@@ -380,7 +384,7 @@ void pelhamRail() {
   // go(false, MAX_SPEED, 5, 1, 0); 
   // go(true, MAX_SPEED, 5, 1, 0); 
   // go(false, MAX_SPEED, 5, 1, 0); 
-  // go(true, MAX_SPEED, 5, 1, 0); 
+  go(true, MAX_SPEED, 5, 1, 0); 
   go(false, MAX_SPEED, 10, 10, 0); 
 }
 
@@ -634,10 +638,10 @@ void draw() {
 void loop() {
   Serial.println("LOOP START");
   pelhamRail();
+  circleOfStops();
   vanderbiltCentral();
   gentleWander();
   pennLine();
-  circleOfStops();
   hudsonLine();
   grandCentral();
   readingRailroad();
