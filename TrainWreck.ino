@@ -28,7 +28,7 @@ const int STN3_PIN = A3;
 const int STN4_PIN = A4;
 
 // -------- tuning ---------
-const int MAX_SPEED = 160;
+const int MAX_SPEED = 170;
 const int RAMP_STEP = 5;
 const int RAMP_DELAY = 1;
 const int MIN_SPEED = 0;
@@ -36,7 +36,7 @@ const float MAX_MPH = 72.0;
 
 // ------- station ---------
 unsigned long MS_FWD = 290;
-unsigned long MS_REV = 2650;
+unsigned long MS_REV = 2350;
 bool sensorEnabled = true;
 bool stationArmed = false;
 unsigned long stationTick = 0;
@@ -120,7 +120,6 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
   draw();
 
   rampSpeed(0);
-  setStationState(AT_STATION);
   stateStartTime = millis();
   unsigned long pauseMs = pauseTime * 1000;
 
@@ -182,8 +181,8 @@ void updateSignal(int speed, bool rampUp) {
 
 // -------- lights --------
 
-const unsigned long ARRIVE_BLINK_MS   = 4000;
-const unsigned long DEPART_BLINK_MS   = 4000;
+const unsigned long ARRIVE_BLINK_MS   = 3000;
+const unsigned long DEPART_BLINK_MS   = 3000;
 const unsigned long HOLD_AFTER_LEAVE  = 2000;
 const unsigned long FADE_MS           = 2000;
 
@@ -347,6 +346,7 @@ void rampSpeed(int target) {
     // ---- DOCKING LOGIC ----
     if (sensorEnabled && target == 0 && !dockedThisStop && current < 55) {
       Serial.println("HARD WAIT FOR SENSOR EDGE");
+          setStationState(ARRIVING);
         updateStationLights();
       while (stationArmed == false) {
         int v = analogRead(IR_PIN);
@@ -356,9 +356,6 @@ void rampSpeed(int target) {
           Serial.println(" TICK LOCKED");
           stationArmed = true;
           break;
-        }
-        if (current < 40) {
-          setStationState(ARRIVING);
         }
         updateStationLights();
       }
