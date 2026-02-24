@@ -1,9 +1,10 @@
 #include <SPI.h>
+
 #include <U8g2lib.h>
 
-#define CS_PIN   10
-#define DC_PIN   9
-#define RST_PIN  8
+#define CS_PIN 10
+#define DC_PIN 9
+#define RST_PIN 8
 
 // --- display driver ---
 U8G2_SH1106_128X64_NONAME_1_4W_HW_SPI u8g2(U8G2_R0, 10, 9, 8);
@@ -12,8 +13,8 @@ U8G2_SH1106_128X64_NONAME_1_4W_HW_SPI u8g2(U8G2_R0, 10, 9, 8);
 const int IR_PIN = A0;
 const int IR_THRESHOLD = 200;
 
-const int in1Pin = 5; 
-const int in2Pin = 6; 
+const int in1Pin = 5;
+const int in2Pin = 6;
 //const int in1Pin = 7; 
 //const int in2Pin = A2; 
 
@@ -27,14 +28,14 @@ const int STN3_PIN = A3;
 const int STN4_PIN = A4;
 
 // -------- tuning ---------
-const int MAX_SPEED   = 160; 
-const int RAMP_STEP   = 5;
-const int RAMP_DELAY  = 1;
-const int MIN_SPEED   = 0;  
+const int MAX_SPEED = 160;
+const int RAMP_STEP = 5;
+const int RAMP_DELAY = 1;
+const int MIN_SPEED = 0;
 const float MAX_MPH = 72.0;
 
 // ------- station ---------
-unsigned long MS_FWD = 230;   
+unsigned long MS_FWD = 230;
 unsigned long MS_REV = 3200;
 bool sensorEnabled = true;
 bool stationArmed = false;
@@ -51,7 +52,13 @@ char line1[64] = "STATUS";
 char line2[64] = "0 MPH";
 char line3[64] = "READY";
 
-enum StationState { IDLE, ARRIVING, AT_STATION, DEPARTING, COOL_DOWN };
+enum StationState {
+  IDLE,
+  ARRIVING,
+  AT_STATION,
+  DEPARTING,
+  COOL_DOWN
+};
 StationState currentStationState = IDLE;
 unsigned long stateStartTime = 0;
 
@@ -75,14 +82,14 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
       Serial.print("🟢 FAST LEG ⏱ ");
       Serial.print(segment / 1000);
       Serial.println("s");
-      const char* msg;
+      const char * msg;
       snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
       draw();
       delay(segment);
 
       rampSpeed(DIP_SPEED);
       Serial.print("🟡 SLOW LEG ⏱ ");
-      Serial.print(DIP_TIME/1000);
+      Serial.print(DIP_TIME / 1000);
       Serial.println("s");
       snprintf(line3, sizeof(line3), "%s %ds", "SLOW LEG", DIP_TIME / 1000);
       draw();
@@ -112,26 +119,28 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
   snprintf(line3, sizeof(line3), "%s %ds", "FULL STOP", pauseTime);
   draw();
 
-  rampSpeed(0); 
+  rampSpeed(0);
   setStationState(AT_STATION);
-  // Start the "At Station" phase
   stateStartTime = millis();
-
-  unsigned long pauseMs = pauseTime * 1000UL;
+  unsigned long pauseMs = pauseTime * 1000;
 
   snprintf(line3, sizeof(line3), "%s %ds", "AT STATION", pauseTime);
 
   while (millis() - stateStartTime < pauseMs) {
     draw();
-    updateStationLights(); 
+    updateStationLights();
   }
+
   setStationState(DEPARTING);
-  updateStationLights(); 
+  updateStationLights();
   snprintf(line3, sizeof(line3), "%s", "NOW DEPARTING");
   draw();
-  delay(3000);
-  draw();
-  updateStationLights(); 
+  unsigned long start = millis();
+  while (millis() - start < 4000) {
+    updateStationLights();
+    draw(); // optional but keeps sync feel
+  }
+
 }
 
 // -------- signal --------
@@ -173,6 +182,11 @@ void updateSignal(int speed, bool rampUp) {
 
 // -------- lights --------
 
+const unsigned long ARRIVE_BLINK_MS   = 3000;
+const unsigned long DEPART_BLINK_MS   = 3000;
+const unsigned long HOLD_AFTER_LEAVE  = 2000;
+const unsigned long FADE_MS           = 2500;
+
 void allOn() {
   //Serial.print("ALL ON! ");
   digitalWrite(STN1_PIN, HIGH);
@@ -182,11 +196,33 @@ void allOn() {
 }
 
 void fadeToBlackMs(unsigned long ms) {
-  unsigned long step = ms / 3;
-  digitalWrite(STN3_PIN, LOW); draw(); draw(); delay(step);
-  digitalWrite(STN1_PIN, LOW); draw(); draw(); delay(step);
-  digitalWrite(STN4_PIN, LOW); draw(); draw(); delay(step);
-  digitalWrite(STN2_PIN, LOW); draw(); draw();
+  static unsigned long start = 0;
+  static int phase = 0;
+
+  if (phase == 0) {
+    start = millis();
+    phase = 1;
+  }
+
+  unsigned long step = ms / 4;
+  unsigned long elapsed = millis() - start;
+
+  if (phase == 1 && elapsed >= step) {
+    digitalWrite(STN3_PIN, LOW);
+    phase = 2;
+  }
+  if (phase == 2 && elapsed >= step * 2) {
+    digitalWrite(STN1_PIN, LOW);
+    phase = 3;
+  }
+  if (phase == 3 && elapsed >= step * 3) {
+    digitalWrite(STN4_PIN, LOW);
+    phase = 4;
+  }
+  if (phase == 4 && elapsed >= step * 4) {
+    digitalWrite(STN2_PIN, LOW);
+    phase = 0; // finished
+  }
 }
 
 void alternateBlink(unsigned long now) {
@@ -200,13 +236,13 @@ void alternateBlink(unsigned long now) {
 
     if (phase) {
       digitalWrite(STN1_PIN, LOW);
-      digitalWrite(STN2_PIN, LOW);
+      digitalWrite(STN2_PIN, HIGH);
       digitalWrite(STN3_PIN, HIGH);
       digitalWrite(STN4_PIN, HIGH);
     } else {
       digitalWrite(STN1_PIN, HIGH);
       digitalWrite(STN2_PIN, HIGH);
-      digitalWrite(STN3_PIN, LOW);
+      digitalWrite(STN3_PIN, HIGH);
       digitalWrite(STN4_PIN, LOW);
     }
   }
@@ -222,36 +258,45 @@ void updateStationLights() {
   unsigned long elapsed = millis() - stateStartTime;
 
   switch (currentStationState) {
-    case ARRIVING:
-      alternateBlink(millis()); // Blink for arrival
-      if (elapsed >= 3000) currentStationState = AT_STATION; 
-      break;
+case ARRIVING:
+  alternateBlink(millis());
+  if (elapsed >= ARRIVE_BLINK_MS)
+    setStationState(AT_STATION);
+  break;
 
-    case AT_STATION:
-      allOn(); // Solid lights while stopped
-      break;
+case DEPARTING:
+  alternateBlink(millis());
+  if (elapsed >= DEPART_BLINK_MS)
+    setStationState(COOL_DOWN);
+  break;
 
-    case DEPARTING:
-      alternateBlink(millis()); // Blink before leaving
-      if (elapsed >= 5000) currentStationState = COOL_DOWN;
-      break;
+case COOL_DOWN:
+  static bool fading = false;
 
-    case COOL_DOWN:
-      // Keep lights on for 3 seconds after train leaves
-      allOn(); 
-      if (elapsed >= 3000) {
-        fadeToBlackMs(2000); 
-        currentStationState = IDLE;
-      }
-      break;
+  if (!fading) {
+    allOn();
+    if (elapsed >= HOLD_AFTER_LEAVE) {
+      fading = true;
+      stateStartTime = millis();
+    }
+  } else {
+    fadeToBlackMs(FADE_MS);
+    if (millis() - stateStartTime >= FADE_MS) {
+      fading = false;
+      setStationState(IDLE);
+    }
+  }
+  break;  case AT_STATION:
+    allOn(); // Solid lights while stopped
+    break;
 
-    case IDLE:
-      // All station pins LOW
-      digitalWrite(STN1_PIN, LOW);
-      digitalWrite(STN2_PIN, LOW);
-      digitalWrite(STN3_PIN, LOW);
-      digitalWrite(STN4_PIN, LOW);
-      break;
+  case IDLE:
+    // All station pins LOW
+    digitalWrite(STN1_PIN, LOW);
+    digitalWrite(STN2_PIN, LOW);
+    digitalWrite(STN3_PIN, LOW);
+    digitalWrite(STN4_PIN, LOW);
+    break;
   }
 }
 
@@ -262,10 +307,10 @@ void writeMotor(bool forward, int pwm) {
 
   if (forward) {
     digitalWrite(in2Pin, LOW); // This stays Digital (The Ground)
-    analogWrite(in1Pin, pwm);  // This uses PWM (The Speed)
+    analogWrite(in1Pin, pwm); // This uses PWM (The Speed)
   } else {
     digitalWrite(in1Pin, LOW); // This stays Digital (The Ground)
-    analogWrite(in2Pin, pwm);  // This uses PWM (The Speed)
+    analogWrite(in2Pin, pwm); // This uses PWM (The Speed)
   }
 }
 
@@ -277,11 +322,11 @@ void setDirection(bool forward) {
 // -------- ramp --------
 void rampSpeed(int target) {
   static int current = 0;
-static bool lastSensorState = false;
-static bool dockedThisStop = false;
-if (target == 0) stationArmed = false;
+  static bool lastSensorState = false;
+  static bool dockedThisStop = false;
+  if (target == 0) stationArmed = false;
 
-if (target != 0) dockedThisStop = false;
+  if (target != 0) dockedThisStop = false;
   if (current == 0 && target > 0)
     current = MIN_SPEED;
 
@@ -300,49 +345,55 @@ if (target != 0) dockedThisStop = false;
     updateStationLights();
 
     // ---- DOCKING LOGIC ----
-    if (sensorEnabled && target == 0  && !dockedThisStop && current < 40) {
-    Serial.println("HARD WAIT FOR SENSOR EDGE");
-  while (stationArmed == false) {
-    int v = analogRead(IR_PIN);
-    if (v < IR_THRESHOLD) {
-      stationTick = millis();
-      Serial.print(v);
-      Serial.println(" TICK LOCKED");
-      stationArmed = true;
-      break;
-    }
-  }
+    if (sensorEnabled && target == 0 && !dockedThisStop && current < 40) {
+      Serial.println("HARD WAIT FOR SENSOR EDGE");
+        updateStationLights();
+      while (stationArmed == false) {
+        int v = analogRead(IR_PIN);
+        if (v < IR_THRESHOLD) {
+          stationTick = millis();
+          Serial.print(v);
+          Serial.println(" TICK LOCKED");
+          stationArmed = true;
+          break;
+        }
+        if (current < 80) {
+          setStationState(ARRIVING);
+        }
+        updateStationLights();
+      }
 
-if (sensorEnabled && target == 0 && !dockedThisStop) {
 
-  // wait for tick once
-  while (!stationArmed) {
-    int v = analogRead(IR_PIN);
-    if (v < IR_THRESHOLD) {
-      stationArmed = true;
-      stationTick = millis();
-      Serial.print(v);
-      Serial.println(" TICK LOCKED");
-    }
-  }
-      setStationState(ARRIVING);
-      snprintf(line3, sizeof(line3), "%s", "ARRIVING NOW");
-      draw();
+      if (sensorEnabled && target == 0 && !dockedThisStop) {
 
-  unsigned long waitMs = lastDirection ? MS_FWD : MS_REV;
-  Serial.print("WAIT ");
-  Serial.println(waitMs);
-  delay(waitMs);              // <-- the one and only delay
+        // wait for tick once
+        while (!stationArmed) {
+          int v = analogRead(IR_PIN);
+          if (v < IR_THRESHOLD) {
+            stationArmed = true;
+            stationTick = millis();
+            Serial.print(v);
+            Serial.println(" TICK LOCKED");
+          }
+        }
 
-  dockedThisStop = true;      // <-- prevent re-run
-  Serial.println("DOCK COMPLETE");
-}
-      
+        unsigned long waitMs = lastDirection ? MS_FWD : MS_REV;
+        Serial.print("WAIT ");
+        Serial.println(waitMs);
+        delay(waitMs); // <-- the one and only delay
+
+        setStationState(AT_STATION);
+        updateStationLights();
+
+        dockedThisStop = true; // <-- prevent re-run
+        Serial.println("DOCK COMPLETE");
+      }
+
     }
 
     // ---- S-CURVE RAMP ----
     int progressed = abs(current - start);
-    float phase = (delta == 0) ? 1.0 : (float)progressed / delta;
+    float phase = (delta == 0) ? 1.0 : (float) progressed / delta;
     int step = max(1, (int)(RAMP_STEP * (0.5 + 1.5 * phase * (1 - phase))));
 
     if (rampUp) {
@@ -361,11 +412,11 @@ if (sensorEnabled && target == 0 && !dockedThisStop) {
     if (target == 0)
       updateSignal(current, rampUp);
 
-      //snprintf(line3, sizeof(line3), "DOWN TO STOP");
+    //snprintf(line3, sizeof(line3), "DOWN TO STOP");
     else
       snprintf(line3, sizeof(line3), "%s %d MPH",
-               rampUp ? "RAMP TO" : "DOWN TO",
-               speedToMph(target));
+        rampUp ? "RAMP TO" : "DOWN TO",
+        speedToMph(target));
 
     writeMotor(lastDirection, current);
     draw();
@@ -388,8 +439,8 @@ void pelhamRail() {
   // go(false, MAX_SPEED, 5, 1, 0); 
   // go(true, MAX_SPEED, 5, 1, 0); 
   // go(false, MAX_SPEED, 5, 1, 0); 
-  go(true, MAX_SPEED, 5, 1, 0); 
-  go(false, MAX_SPEED, 10, 10, 0); 
+  go(true, MAX_SPEED, 5, 10, 0);
+  go(false, MAX_SPEED, 5, 10, 0);
 }
 
 void readingRailroad() {
@@ -399,7 +450,7 @@ void readingRailroad() {
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED, 20, 12, 0); 
+    go(dir, MAX_SPEED, 20, 12, 0);
     dir = !dir;
   }
 }
@@ -409,11 +460,11 @@ void grandCentral() {
   draw();
 
   bool dir = true;
-  int spd = random(MAX_SPEED * 0.75, MAX_SPEED); 
+  int spd = random(MAX_SPEED * 0.75, MAX_SPEED);
 
   for (int i = 0; i < 4; i++) {
     dir = !dir;
-    go(dir, spd, 40, 6, 4); 
+    go(dir, spd, 40, 6, 4);
   }
 }
 
@@ -424,7 +475,7 @@ void hudsonLine() {
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED - 10, 20, 12, 1); 
+    go(dir, MAX_SPEED - 10, 20, 12, 1);
     dir = !dir;
   }
 }
@@ -436,7 +487,7 @@ void pennLine() {
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED - 10, 20, 18, 1); 
+    go(dir, MAX_SPEED - 10, 20, 18, 1);
     dir = !dir;
   }
 }
@@ -448,7 +499,7 @@ void vanderbiltCentral() {
   bool dir = true;
 
   for (int i = 0; i < 4; i++) {
-    go(dir, MAX_SPEED - 4, 20, 12, 1); 
+    go(dir, MAX_SPEED - 4, 20, 12, 1);
     dir = !dir;
   }
 }
@@ -460,7 +511,7 @@ void bAndO() {
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED, 16, 16, 0); 
+    go(dir, MAX_SPEED, 16, 16, 0);
     dir = !dir;
   }
 }
@@ -470,10 +521,10 @@ void circleOfStops() {
   draw();
 
   bool dir = true;
-  int spd = random(MAX_SPEED * 0.75, MAX_SPEED); 
+  int spd = random(MAX_SPEED * 0.75, MAX_SPEED);
 
   for (int i = 0; i < 8; i++) {
-    go(dir, spd, 16, 24, 1); 
+    go(dir, spd, 16, 24, 1);
     dir = !dir;
   }
 }
@@ -483,10 +534,10 @@ void orientExpress() {
   draw();
 
   bool dir = true;
-  int spd = random(MAX_SPEED * 0.75, MAX_SPEED); 
+  int spd = random(MAX_SPEED * 0.75, MAX_SPEED);
 
   for (int i = 0; i < 4; i++) {
-    go(dir, spd, 16, 16, 1); 
+    go(dir, spd, 16, 16, 1);
     dir = !dir;
   }
 }
@@ -499,9 +550,9 @@ void jessTrain() {
     bool dir = (i % 2);
     int spd = MAX_SPEED;
     go(dir, spd,
-       random(20, 60),
-       25,
-       random(2, 5));
+      random(20, 60),
+      25,
+      random(2, 5));
   }
 }
 
@@ -509,10 +560,10 @@ void longTrainRunning() {
   snprintf(line1, sizeof(line1), "%s", "Long Train Running");
   draw();
 
-    int spd = random(MAX_SPEED * 0.85, MAX_SPEED); 
+  int spd = random(MAX_SPEED * 0.85, MAX_SPEED);
 
   for (int i = 0; i < 2; i++) {
-    go(true,  spd, 43, 12, 4);
+    go(true, spd, 43, 12, 4);
     go(false, spd, 43, 12, 4);
   }
 }
@@ -523,12 +574,12 @@ void gentleWander() {
 
   for (int i = 0; i < 15; i++) {
     bool dir = (i % 2);
-    int spd = random(MAX_SPEED * 0.65, MAX_SPEED * 0.75); 
+    int spd = random(MAX_SPEED * 0.65, MAX_SPEED * 0.75);
     int dips = random(5, 9);
     go(dir, spd,
-       random(80, 105),
-       random(16, 36),
-       dips);
+      random(80, 105),
+      random(16, 36),
+      dips);
   }
 }
 
@@ -539,9 +590,9 @@ void silverStreak() {
   for (int i = 0; i < 4; i++) {
     bool dir = (i % 2);
     go(dir, random(MAX_SPEED * 0.85, MAX_SPEED),
-       20,
-       18,
-       0);
+      20,
+      18,
+      0);
   }
 }
 
@@ -558,8 +609,8 @@ void setup() {
   digitalWrite(in2Pin, LOW);
 
   Serial.println("Initialize Display Driver.");
-  u8g2.begin(); 
-  u8g2.clearBuffer();   
+  u8g2.begin();
+  u8g2.clearBuffer();
 
   Serial.println("Station Light Setup.");
   pinMode(STN1_PIN, OUTPUT);
@@ -579,9 +630,9 @@ void setup() {
 }
 
 // -------- draw --------
-void toUpper(char* s) {
-  for (; *s; s++) {
-    if (*s >= 'a' && *s <= 'z') *s -= 32;
+void toUpper(char * s) {
+  for (;* s; s++) {
+    if ( * s >= 'a' && * s <= 'z') * s -= 32;
   }
 }
 
@@ -614,7 +665,7 @@ void draw() {
 
     u8g2.setFont(u8g2_font_ncenB18_tr);
     u8g2.drawStr(55, 48, "MPH");
-    const char* statusStr;
+    const char * statusStr;
     if (globalCurrentSpeed == 0) {
       statusStr = "HALTED";
     } else {
@@ -655,4 +706,3 @@ void loop() {
   orientExpress();
   longTrainRunning();
 }
-
