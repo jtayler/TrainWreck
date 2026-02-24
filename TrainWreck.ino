@@ -11,7 +11,7 @@ U8G2_SH1106_128X64_NONAME_1_4W_HW_SPI u8g2(U8G2_R0, 10, 9, 8);
 
 // -------- pins --------
 const int IR_PIN = A0;
-const int IR_THRESHOLD = 200;
+const int IR_THRESHOLD = 650;
 
 const int in1Pin = 5;
 const int in2Pin = 6;
@@ -35,8 +35,8 @@ const int MIN_SPEED = 0;
 const float MAX_MPH = 72.0;
 
 // ------- station ---------
-unsigned long MS_FWD = 230;
-unsigned long MS_REV = 3200;
+unsigned long MS_FWD = 290;
+unsigned long MS_REV = 2650;
 bool sensorEnabled = true;
 bool stationArmed = false;
 unsigned long stationTick = 0;
@@ -182,10 +182,10 @@ void updateSignal(int speed, bool rampUp) {
 
 // -------- lights --------
 
-const unsigned long ARRIVE_BLINK_MS   = 3000;
-const unsigned long DEPART_BLINK_MS   = 3000;
+const unsigned long ARRIVE_BLINK_MS   = 4000;
+const unsigned long DEPART_BLINK_MS   = 4000;
 const unsigned long HOLD_AFTER_LEAVE  = 2000;
-const unsigned long FADE_MS           = 2500;
+const unsigned long FADE_MS           = 2000;
 
 void allOn() {
   //Serial.print("ALL ON! ");
@@ -345,7 +345,7 @@ void rampSpeed(int target) {
     updateStationLights();
 
     // ---- DOCKING LOGIC ----
-    if (sensorEnabled && target == 0 && !dockedThisStop && current < 40) {
+    if (sensorEnabled && target == 0 && !dockedThisStop && current < 55) {
       Serial.println("HARD WAIT FOR SENSOR EDGE");
         updateStationLights();
       while (stationArmed == false) {
@@ -357,7 +357,7 @@ void rampSpeed(int target) {
           stationArmed = true;
           break;
         }
-        if (current < 80) {
+        if (current < 40) {
           setStationState(ARRIVING);
         }
         updateStationLights();
@@ -377,10 +377,17 @@ void rampSpeed(int target) {
           }
         }
 
-        unsigned long waitMs = lastDirection ? MS_FWD : MS_REV;
-        Serial.print("WAIT ");
-        Serial.println(waitMs);
-        delay(waitMs); // <-- the one and only delay
+unsigned long waitMs = lastDirection ? MS_FWD : MS_REV;
+
+Serial.print("WAIT ");
+Serial.println(waitMs);
+
+unsigned long start = millis();
+
+while (millis() - start < waitMs) {
+    updateStationLights();   // keep blinking
+    draw();                  // keep UI alive
+}
 
         setStationState(AT_STATION);
         updateStationLights();
