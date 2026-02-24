@@ -36,7 +36,7 @@ const float MAX_MPH = 72.0;
 
 // ------- station ---------
 unsigned long MS_FWD = 0;
-unsigned long MS_REV = 4450;
+unsigned long MS_REV = 4000;
 bool sensorEnabled = true;
 bool stationArmed = false;
 unsigned long stationTick = 0;
@@ -132,7 +132,7 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
 
   setStationState(DEPARTING);
   updateStationLights();
-  snprintf(line3, sizeof(line3), "%s", "ALL ABORAD!");
+  snprintf(line3, sizeof(line3), "%s", "ALL ABOARD!");
   draw();
   unsigned long start = millis();
   while (millis() - start < 4000) {
@@ -181,10 +181,10 @@ void updateSignal(int speed, bool rampUp) {
 
 // -------- lights --------
 
-const unsigned long ARRIVE_BLINK_MS   = 3000;
+const unsigned long ARRIVE_BLINK_MS   = 10000;
 const unsigned long DEPART_BLINK_MS   = 3000;
-const unsigned long HOLD_AFTER_LEAVE  = 2000;
-const unsigned long FADE_MS           = 2000;
+const unsigned long HOLD_AFTER_LEAVE  = 3000;
+const unsigned long FADE_MS           = 3000;
 
 void allOn() {
   //Serial.print("ALL ON! ");
@@ -700,7 +700,6 @@ void draw() {
 void loop() {
   Serial.println("LOOP START");
   pelhamRail();
-  circleOfStops();
   vanderbiltCentral();
   gentleWander();
   pennLine();
@@ -711,5 +710,6 @@ void loop() {
   bAndO();
   jessTrain();
   orientExpress();
+  circleOfStops();
   longTrainRunning();
 }
