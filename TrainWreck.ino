@@ -1,10 +1,23 @@
 #include <SPI.h>
-
+#include <EEPROM.h>
 #include <U8g2lib.h>
 
 #define CS_PIN 10
 #define DC_PIN 9
 #define RST_PIN 8
+
+// --- persistence store ---
+
+#define EEPROM_VERSION 1
+
+struct Persist {
+  byte version;
+  unsigned long fwdLoopMs;
+  unsigned long revLoopMs;
+  long fwdOffsetMs;
+  long revOffsetMs;
+};
+
 
 // --- display driver ---
 U8G2_SH1106_128X64_NONAME_1_4W_HW_SPI u8g2(U8G2_R0, 10, 9, 8);
@@ -33,17 +46,23 @@ const int RAMP_STEP = 5;
 const int RAMP_DELAY = 1;
 const int MIN_SPEED = 0;
 const float MAX_MPH = 72.0;
+const int DOCKING_SPEED = 40;
+
+// ----- station stop -------
+unsigned long fwdLoopMs = 0;
+unsigned long revLoopMs = 0;
+
+long fwdOffsetMs = 400;
+long revOffsetMs = 600;
 
 // ------- station ---------
-unsigned long MS_FWD = 0;
-unsigned long MS_REV = 4000;
 bool sensorEnabled = true;
 bool stationArmed = false;
 unsigned long stationTick = 0;
 
 // ----- dip behavior -----
 const int DIP_SPEED = MAX_SPEED * 3.6 / 10; // 25MPH
-const unsigned long DIP_TIME = 4000; // ms per dip
+const unsigned long DIP_TIME = 3600; // ms per dip
 
 // -------- display --------
 bool lastDirection = true;
@@ -116,7 +135,7 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
   Serial.print("🛑 STOP ⏱ ");
   Serial.print(pauseTime);
   Serial.println("s");
-  snprintf(line3, sizeof(line3), "%s %ds", "FULL STOP", pauseTime);
+  snprintf(line3, sizeof(line3), "%s %ds", "BRAKING", pauseTime);
   draw();
 
   rampSpeed(0);
@@ -132,7 +151,7 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
 
   setStationState(DEPARTING);
   updateStationLights();
-  snprintf(line3, sizeof(line3), "%s", "ALL ABOARD!");
+  snprintf(line3, sizeof(line3), "%s", "NOW BOARDING");
   draw();
   unsigned long start = millis();
   while (millis() - start < 4000) {
@@ -146,24 +165,18 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
 void signalRed() {
   digitalWrite(YEL_PIN, LOW);
   digitalWrite(GRN_PIN, LOW);
-  //delay(300);
-
   digitalWrite(RED_PIN, HIGH);
 }
 
 void signalYellow() {
   digitalWrite(RED_PIN, LOW);
   digitalWrite(GRN_PIN, LOW);
-  //delay(300);
-
   digitalWrite(YEL_PIN, HIGH);
 }
 
 void signalGreen() {
   digitalWrite(RED_PIN, LOW);
   digitalWrite(YEL_PIN, LOW);
-  //delay(300);
-
   digitalWrite(GRN_PIN, HIGH);
 }
 
@@ -181,7 +194,7 @@ void updateSignal(int speed, bool rampUp) {
 
 // -------- lights --------
 
-const unsigned long ARRIVE_BLINK_MS   = 10000;
+const unsigned long ARRIVE_BLINK_MS   = 6000;
 const unsigned long DEPART_BLINK_MS   = 3000;
 const unsigned long HOLD_AFTER_LEAVE  = 3000;
 const unsigned long FADE_MS           = 3000;
@@ -334,6 +347,11 @@ void rampSpeed(int target) {
     return;
   }
 
+  // if (current == 0 && target > 0) {
+  //   writeMotor(lastDirection, 255);
+  //   delay(1);
+  // }
+
   int start = current;
   int delta = abs(target - start);
   bool rampUp = target > current;
@@ -347,7 +365,7 @@ void rampSpeed(int target) {
     updateStationLights();
 
     // ---- DOCKING LOGIC ----
-    if (sensorEnabled && target == 0 && !dockedThisStop && current < 40) {
+    if (sensorEnabled && target == 0 && !dockedThisStop && current < DOCKING_SPEED) {
       Serial.println("HARD WAIT FOR SENSOR EDGE");
       updateStationLights();
       while (stationArmed == false) {
@@ -377,7 +395,7 @@ void rampSpeed(int target) {
           }
         }
 
-unsigned long waitMs = lastDirection ? MS_FWD : MS_REV;
+unsigned long waitMs = calculateStationPause(lastDirection);
 
 Serial.print("WAIT ");
 Serial.println(waitMs);
@@ -433,21 +451,139 @@ while (millis() - start < waitMs) {
   updateSignal(current, rampUp);
 }
 
+// -------- calibrate --------
+// Calibration function
+void calibrateTrain() {
+  snprintf(line1, sizeof(line1), "CALIBRATE STATION");
+  draw();
+
+  // Measure FWD and REV times
+  unsigned long lapFwd = measureLap(true);
+  unsigned long lapRev = measureLap(false);
+
+  // Save results
+  Persist p;
+  p.version = EEPROM_VERSION;
+  p.fwdLoopMs = lapFwd;
+  p.revLoopMs = lapRev;
+
+  EEPROM.put(0, p);  // Write to EEPROM
+
+  // Log results
+  Serial.print("Lap FWD: ");
+  Serial.println(lapFwd);
+  Serial.print("Lap REV: ");
+  Serial.println(lapRev);
+  Serial.print("FWD Loop Time: ");
+  Serial.println(p.fwdLoopMs);
+  Serial.print("REV Loop Time: ");
+  Serial.println(p.revLoopMs);
+
+  snprintf(line1, sizeof(line1), "DONE");
+  draw();
+}
+
+void loadFromEEPROM() {
+  Persist p;
+  EEPROM.get(0, p);
+
+  if (p.version == EEPROM_VERSION) {
+    fwdLoopMs = p.fwdLoopMs;
+    revLoopMs = p.revLoopMs;
+  } else {
+    // No saved data, run calibration
+    calibrateTrain();
+  }
+}
+
+unsigned long calculateStationPause(bool forward) {
+
+  if (forward) {
+    return fwdOffsetMs;
+  } else {
+    return (revLoopMs / 2) + revOffsetMs;
+  }
+}
+// Function to measure lap time
+unsigned long measureLap(bool forward) {
+
+  Serial.println();
+  Serial.println("---- CAL START ----");
+  Serial.println(forward ? "FWD" : "REV");
+
+  // Set direction and ramp speed
+  setDirection(forward);
+  rampSpeed(DOCKING_SPEED);  // Assume this will ramp to speed immediately
+
+  // No delay here because the train will be at speed once rampSpeed() finishes
+
+  bool lastState = analogRead(IR_PIN) < IR_THRESHOLD;
+
+  Serial.println("Waiting for falling edge...");
+
+  // wait for transition HIGH -> LOW
+  while (true) {
+    bool state = analogRead(IR_PIN) < IR_THRESHOLD;
+    if (!lastState && state) break;
+    lastState = state;
+  }
+
+  Serial.println("First edge.");
+
+  // wait for rising edge (clear)
+  while (true) {
+    bool state = analogRead(IR_PIN) < IR_THRESHOLD;
+    if (lastState && !state) break;
+    lastState = state;
+  }
+
+  Serial.println("Clear.");
+
+  unsigned long start = millis();
+  Serial.println("Timing...");
+
+  // wait for next falling edge
+  while (true) {
+    bool state = analogRead(IR_PIN) < IR_THRESHOLD;
+    if (!lastState && state) break;
+    lastState = state;
+  }
+
+  unsigned long lap = millis() - start;
+
+  Serial.println();
+  Serial.println("SECOND block detected.");
+  Serial.print("Lap measured: ");
+  Serial.println(lap);
+
+  rampSpeed(0);  // Stop the motor after measuring
+
+  Serial.println("---- CALIBRATION END ----");
+
+  return lap;
+}
+
+// Save calibration values to EEPROM
+void saveToEEPROM() {
+  Persist p;
+  p.version = EEPROM_VERSION;
+  p.fwdLoopMs = fwdLoopMs;
+  p.revLoopMs = revLoopMs;
+  p.fwdOffsetMs = fwdOffsetMs;
+  p.revOffsetMs = revOffsetMs;
+
+  EEPROM.put(0, p);  // Write the calibration data to EEPROM
+}
+
 // -------- routes --------
 void pelhamRail() {
   snprintf(line1, sizeof(line1), "%s", "Taking Pelham 123");
   draw();
-
-  // go(true, MAX_SPEED, 5, 1, 0); 
-  // go(false, MAX_SPEED, 5, 1, 0); 
-  // go(true, MAX_SPEED, 5, 1, 0); 
-  // go(false, MAX_SPEED, 5, 1, 0); 
-  // go(true, MAX_SPEED, 5, 1, 0); 
-  // go(false, MAX_SPEED, 5, 1, 0); 
-  // go(true, MAX_SPEED, 5, 1, 0); 
-  // go(false, MAX_SPEED, 5, 1, 0); 
-  go(true, MAX_SPEED, 5, 10, 0);
-  go(false, MAX_SPEED, 5, 10, 0);
+  bool dir = true;
+  for (int i = 0; i < 4; i++) {
+    go(dir, MAX_SPEED, 5, 10, 0);
+    dir = !dir;
+  }
 }
 
 void readingRailroad() {
@@ -618,6 +754,20 @@ void setup() {
   Serial.println("Initialize Display Driver.");
   u8g2.begin();
   u8g2.clearBuffer();
+
+  Serial.println("Calibrate Train.");
+  snprintf(line1, sizeof(line1), "CALIBRATING");
+  draw();
+
+  // Load the saved calibration settings from EEPROM
+  loadFromEEPROM();
+
+  // Always run calibration on startup
+  calibrateTrain();
+
+  // Display finished setup message
+  snprintf(line1, sizeof(line1), "DONEKSI");
+  draw();
 
   Serial.println("Station Light Setup.");
   pinMode(STN1_PIN, OUTPUT);
