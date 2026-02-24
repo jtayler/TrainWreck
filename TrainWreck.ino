@@ -132,7 +132,7 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
 
   setStationState(DEPARTING);
   updateStationLights();
-  snprintf(line3, sizeof(line3), "%s", "ALL ABORAD");
+  snprintf(line3, sizeof(line3), "%s", "ALL ABORAD!");
   draw();
   unsigned long start = millis();
   while (millis() - start < 4000) {
@@ -341,12 +341,14 @@ void rampSpeed(int target) {
   updateSignal((rampUp ? 1 : current), rampUp);
 
   while (current != target) {
+    if (sensorEnabled && target == 0 && current < 100) {
+      setStationState(ARRIVING);
+    }
     updateStationLights();
 
     // ---- DOCKING LOGIC ----
     if (sensorEnabled && target == 0 && !dockedThisStop && current < 40) {
       Serial.println("HARD WAIT FOR SENSOR EDGE");
-      setStationState(ARRIVING);
       updateStationLights();
       while (stationArmed == false) {
         int v = analogRead(IR_PIN);
@@ -365,6 +367,7 @@ void rampSpeed(int target) {
 
         // wait for tick once
         while (!stationArmed) {
+          updateStationLights();
           int v = analogRead(IR_PIN);
           if (v < IR_THRESHOLD) {
             stationArmed = true;
