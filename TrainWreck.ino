@@ -35,8 +35,8 @@ const int MIN_SPEED = 0;
 const float MAX_MPH = 72.0;
 
 // ------- station ---------
-unsigned long MS_FWD = 290;
-unsigned long MS_REV = 2350;
+unsigned long MS_FWD = 0;
+unsigned long MS_REV = 4450;
 bool sensorEnabled = true;
 bool stationArmed = false;
 unsigned long stationTick = 0;
@@ -132,7 +132,7 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
 
   setStationState(DEPARTING);
   updateStationLights();
-  snprintf(line3, sizeof(line3), "%s", "NOW DEPARTING");
+  snprintf(line3, sizeof(line3), "%s", "ALL ABORAD");
   draw();
   unsigned long start = millis();
   while (millis() - start < 4000) {
@@ -344,10 +344,10 @@ void rampSpeed(int target) {
     updateStationLights();
 
     // ---- DOCKING LOGIC ----
-    if (sensorEnabled && target == 0 && !dockedThisStop && current < 55) {
+    if (sensorEnabled && target == 0 && !dockedThisStop && current < 40) {
       Serial.println("HARD WAIT FOR SENSOR EDGE");
-          setStationState(ARRIVING);
-        updateStationLights();
+      setStationState(ARRIVING);
+      updateStationLights();
       while (stationArmed == false) {
         int v = analogRead(IR_PIN);
         if (v < IR_THRESHOLD) {
