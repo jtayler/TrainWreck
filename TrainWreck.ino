@@ -89,11 +89,7 @@ int speedToMph(int pwm) {
 // -------- go! --------
 void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   Serial.println("GO!");
-  //Serial.print(runTime);
-  //Serial.println("s");
-
   unsigned long pauseTime = random(6, 20);
-
   setDirection(forward);
   rampSpeed(random(speed * 0.95, speed));
 
@@ -290,8 +286,9 @@ void updateStationLights() {
   switch (currentStationState) {
 case ARRIVING:
   alternateBlink(millis());
-  if (elapsed >= ARRIVE_BLINK_MS)
-    setStationState(AT_STATION);
+  // may or may not be at the station yet
+  // if (elapsed >= ARRIVE_BLINK_MS)
+  //   setStationState(AT_STATION);
   break;
 
 case DEPARTING:
