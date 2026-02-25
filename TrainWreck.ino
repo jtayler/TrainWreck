@@ -46,14 +46,14 @@ const int RAMP_STEP = 5;
 const int RAMP_DELAY = 1;
 const int MIN_SPEED = 0;
 const float MAX_MPH = 72.0;
-const int DOCKING_SPEED = 44;
+const int DOCKING_SPEED = 58;
 
 // ----- station stop -------
 unsigned long fwdLoopMs = 0;
 unsigned long revLoopMs = 0;
 
-long fwdOffsetMs = 400;
-long revOffsetMs = 600;
+long fwdOffsetMs = 20;
+long revOffsetMs = 1000;
 
 // ------- station ---------
 bool sensorEnabled = true;
@@ -87,13 +87,15 @@ int speedToMph(int pwm) {
 }
 
 // -------- go! --------
-void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime, int dipCount) {
+void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   Serial.println("GO!");
   //Serial.print(runTime);
   //Serial.println("s");
 
+  unsigned long pauseTime = random(6, 20);
+
   setDirection(forward);
-  rampSpeed(speed);
+  rampSpeed(random(speed * 0.95, speed));
 
   if (dipCount > 0) {
     unsigned long segment = (runTime * 1000) / (dipCount + 1);
@@ -114,7 +116,7 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
       draw();
       delay(DIP_TIME);
 
-      rampSpeed(speed);
+      rampSpeed(random(speed * 0.85, speed));
     }
     Serial.print("🟢 FAST LEG ⏱ ");
     Serial.print(segment / 1000);
@@ -135,7 +137,7 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
   Serial.print("🛑 STOP ⏱ ");
   Serial.print(pauseTime);
   Serial.println("s");
-  snprintf(line3, sizeof(line3), "%s %ds", "BRAKING STOP", pauseTime);
+  snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
   draw();
 
   rampSpeed(0);
@@ -456,6 +458,7 @@ while (millis() - start < waitMs) {
 void calibrateTrain() {
   snprintf(line1, sizeof(line1), "CALIBRATE STATION");
   draw();
+  rampSpeed(MAX_SPEED);
 
   // Measure FWD and REV times
   unsigned long lapFwd = measureLap(true);
@@ -501,7 +504,7 @@ unsigned long calculateStationPause(bool forward) {
   if (forward) {
     return fwdOffsetMs;
   } else {
-    return (revLoopMs / 2) + revOffsetMs;
+    return ((revLoopMs * 0.51) + revOffsetMs) - fwdOffsetMs;
   }
 }
 // Function to measure lap time
@@ -555,7 +558,6 @@ unsigned long measureLap(bool forward) {
   Serial.println(lap);
 
   rampSpeed(0);  // Stop the motor after measuring
-  delay(100);
   Serial.println("---- CALIBRATION END ----");
 
   return lap;
@@ -579,7 +581,7 @@ void pelhamRail() {
   draw();
   bool dir = true;
   for (int i = 0; i < 4; i++) {
-    go(dir, MAX_SPEED, 5, 10, 0);
+    go(dir, MAX_SPEED, 5, 0);
     dir = !dir;
   }
 }
@@ -591,7 +593,7 @@ void readingRailroad() {
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED, 20, 12, 0);
+    go(dir, MAX_SPEED, 20, 0);
     dir = !dir;
   }
 }
@@ -605,7 +607,7 @@ void grandCentral() {
 
   for (int i = 0; i < 4; i++) {
     dir = !dir;
-    go(dir, spd, 40, 6, 4);
+    go(dir, spd, 40, 4);
   }
 }
 
@@ -616,7 +618,7 @@ void hudsonLine() {
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED - 10, 20, 12, 1);
+    go(dir, MAX_SPEED - 10, 20, 1);
     dir = !dir;
   }
 }
@@ -628,7 +630,7 @@ void pennLine() {
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED - 10, 20, 18, 1);
+    go(dir, MAX_SPEED - 10, 20, 1);
     dir = !dir;
   }
 }
@@ -640,7 +642,7 @@ void vanderbiltCentral() {
   bool dir = true;
 
   for (int i = 0; i < 4; i++) {
-    go(dir, MAX_SPEED - 4, 20, 12, 1);
+    go(dir, MAX_SPEED - 4, 20, 1);
     dir = !dir;
   }
 }
@@ -652,7 +654,7 @@ void bAndO() {
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED, 16, 16, 0);
+    go(dir, MAX_SPEED, 16, 0);
     dir = !dir;
   }
 }
@@ -665,7 +667,7 @@ void circleOfStops() {
   int spd = random(MAX_SPEED * 0.75, MAX_SPEED);
 
   for (int i = 0; i < 8; i++) {
-    go(dir, spd, 16, 24, 1);
+    go(dir, spd, 16, 1);
     dir = !dir;
   }
 }
@@ -678,7 +680,7 @@ void orientExpress() {
   int spd = random(MAX_SPEED * 0.75, MAX_SPEED);
 
   for (int i = 0; i < 4; i++) {
-    go(dir, spd, 16, 16, 1);
+    go(dir, spd, 16, 1);
     dir = !dir;
   }
 }
@@ -692,7 +694,6 @@ void jessTrain() {
     int spd = MAX_SPEED;
     go(dir, spd,
       random(20, 60),
-      25,
       random(2, 5));
   }
 }
@@ -704,8 +705,8 @@ void longTrainRunning() {
   int spd = random(MAX_SPEED * 0.85, MAX_SPEED);
 
   for (int i = 0; i < 2; i++) {
-    go(true, spd, 43, 12, 4);
-    go(false, spd, 43, 12, 4);
+    go(true, spd, 43, 4);
+    go(false, spd, 43, 4);
   }
 }
 
@@ -719,7 +720,6 @@ void gentleWander() {
     int dips = random(5, 9);
     go(dir, spd,
       random(80, 105),
-      random(16, 36),
       dips);
   }
 }
@@ -732,7 +732,6 @@ void silverStreak() {
     bool dir = (i % 2);
     go(dir, random(MAX_SPEED * 0.85, MAX_SPEED),
       20,
-      18,
       0);
   }
 }
