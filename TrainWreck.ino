@@ -52,7 +52,7 @@ const int DOCKING_SPEED = 58;
 unsigned long fwdLoopMs = 0;
 unsigned long revLoopMs = 0;
 
-long fwdOffsetMs = 20;
+long fwdOffsetMs = 0;
 long revOffsetMs = 1000;
 
 // ------- station ---------
@@ -106,7 +106,12 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       const char * msg;
       snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
       draw();
-      delay(segment);
+      unsigned long legStartTime = millis();
+      while (millis() - legStartTime < segment) {
+        draw();
+        updateStationLights();
+      }
+      // delay(segment);
 
       rampSpeed(DIP_SPEED);
       Serial.print("🟡 SLOW LEG ⏱ ");
@@ -114,8 +119,12 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       Serial.println("s");
       snprintf(line3, sizeof(line3), "%s %ds", "SLOW LEG", DIP_TIME / 1000);
       draw();
-      delay(DIP_TIME);
-
+      unsigned long dipStartTime = millis();
+      while (millis() - dipStartTime < DIP_TIME) {
+        draw();
+        updateStationLights();
+      }
+      //delay(DIP_TIME);
       rampSpeed(random(speed * 0.85, speed));
     }
     Serial.print("🟢 FAST LEG ⏱ ");
@@ -123,7 +132,12 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     Serial.println("s");
     snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
     draw();
-    delay(segment);
+      unsigned long segmentStartTime = millis();
+      while (millis() - segmentStartTime < segment) {
+        draw();
+        updateStationLights();
+      }
+    //delay(segment);
 
   } else {
     Serial.print("🟢 ONLY LEG ⏱ ");
@@ -131,8 +145,12 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     Serial.println("s");
     snprintf(line3, sizeof(line3), "%s %ds", "ONLY LEG", runTime);
     draw();
-    delay(runTime * 1000);
-
+    unsigned long onlyStartTime = millis();
+    while (millis() - onlyStartTime < runTime * 1000) {
+      draw();
+      updateStationLights();
+    }
+    //delay(runTime * 1000);
   }
   Serial.print("🛑 STOP ⏱ ");
   Serial.print(pauseTime);
@@ -142,10 +160,8 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
 
   rampSpeed(0);
   stateStartTime = millis();
-  unsigned long pauseMs = pauseTime * 1000;
-
   snprintf(line3, sizeof(line3), "%s %ds", "AT STATION", pauseTime);
-
+  unsigned long pauseMs = pauseTime * 1000;
   while (millis() - stateStartTime < pauseMs) {
     draw();
     updateStationLights();
@@ -461,7 +477,7 @@ void calibrateTrain() {
   rampSpeed(MAX_SPEED);
 
   // Measure FWD and REV times
-  unsigned long lapFwd = measureLap(true);
+  unsigned long lapFwd = 0; //measureLap(true);
   unsigned long lapRev = measureLap(false);
 
   // Save results
