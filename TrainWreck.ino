@@ -46,7 +46,7 @@ const int RAMP_STEP = 5;
 const int RAMP_DELAY = 1;
 const int MIN_SPEED = 0;
 const float MAX_MPH = 72.0;
-const int DOCKING_SPEED = 40;
+const int DOCKING_SPEED = 44;
 
 // ----- station stop -------
 unsigned long fwdLoopMs = 0;
@@ -135,7 +135,7 @@ void go(bool forward, int speed, unsigned long runTime, unsigned long pauseTime,
   Serial.print("🛑 STOP ⏱ ");
   Serial.print(pauseTime);
   Serial.println("s");
-  snprintf(line3, sizeof(line3), "%s %ds", "BRAKING", pauseTime);
+  snprintf(line3, sizeof(line3), "%s %ds", "BRAKING STOP", pauseTime);
   draw();
 
   rampSpeed(0);
@@ -194,8 +194,8 @@ void updateSignal(int speed, bool rampUp) {
 
 // -------- lights --------
 
-const unsigned long ARRIVE_BLINK_MS   = 6000;
-const unsigned long DEPART_BLINK_MS   = 3000;
+const unsigned long ARRIVE_BLINK_MS   = 4000;
+const unsigned long DEPART_BLINK_MS   = 4000;
 const unsigned long HOLD_AFTER_LEAVE  = 3000;
 const unsigned long FADE_MS           = 3000;
 
@@ -507,8 +507,7 @@ unsigned long calculateStationPause(bool forward) {
 // Function to measure lap time
 unsigned long measureLap(bool forward) {
 
-  Serial.println();
-  Serial.println("---- CAL START ----");
+  Serial.println("---- CALIBRATION ----");
   Serial.println(forward ? "FWD" : "REV");
 
   // Set direction and ramp speed
@@ -542,7 +541,6 @@ unsigned long measureLap(bool forward) {
   unsigned long start = millis();
   Serial.println("Timing...");
 
-  // wait for next falling edge
   while (true) {
     bool state = analogRead(IR_PIN) < IR_THRESHOLD;
     if (!lastState && state) break;
@@ -557,7 +555,7 @@ unsigned long measureLap(bool forward) {
   Serial.println(lap);
 
   rampSpeed(0);  // Stop the motor after measuring
-
+  delay(100);
   Serial.println("---- CALIBRATION END ----");
 
   return lap;
