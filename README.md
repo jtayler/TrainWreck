@@ -2,28 +2,31 @@
 ### Powered by RailOS™
 
 > **A luxury smart power controller for any model train.**  
-> RailStation turns a “dumb” power supply into a **control tower** with smooth motion physics, automatic station docking, and synchronized signals + station lighting.  
-> **Easy to enjoy.** Grab the knob anytime for manual override—let go and it glides back into automation.
+> RailStation replaces a “dumb” power supply with a **control tower** with smooth motion physics, giant display and automatic configuration for your train and track to land for station docking with choreographed station light signals and lighting.  
+> **Easy to enjoy.** Grab the knob anytime for manual override—let go and it glides back into automation. The large display changes with a click to show the list of Routes and you can scroll and pipck another Route, or click and hold a long-press to adjust settings and save them.
 
 ---
 
 ## What it does (in one minute)
 
-- **Auto-calibrates to your layout** so station finding “just works.”
-- Runs **scripted routes** with realistic pacing and a human feel.
+- **Auto-calibrates to your layout** so station finding literally “just works.”
+- Runs **scripted routes** with realistic pacing, raping speed and a human feel.
 - Drives a **real traffic light** (top-and-center) + **station lights** with choreography.
-- Supports **Z to G scale** by respecting a configurable **MAX_SPEED** ceiling.
-- Runs for **2–3 hours continuously** in repeating loops.
+- Supports **Z to G scale** by respecting a configurable power ceiling.
+- The built-in series of fun Lines will run for **2–3 hours continuously** and will repeat in an endless loop.
 
 ---
 
-## The signature features
+## Signature features
 
 ### Smooth motion you can feel
 RailOS uses non-linear ramping so starts/stops feel intentional—no lurch, no toy throttle vibe.
 
+### Large, luxurious display
+A large, elegant display turns your train into the centerpiece — with a beautifully simple interface that makes control effortless.
+
 ### Station docking that actually lands
-An IR sensor is used for consistent station arrival behavior: approach → crawl → stop → dwell → depart.
+A TINY IR sensor is used for automatic station arrival behavior: approach → crawl → stop → dwell → depart.
 
 ### Real signals, not decoration
 **Traffic Light**
@@ -86,7 +89,7 @@ RailOS keeps it easy: you pick a line, and a few “human” traits shape the fe
 - **SHORT_RUN** — medium legs, balanced station time  
 - **LONG_HAUL** — longer cruising legs, fewer but more “cinematic” station moments  
 
-These traits influence:
+These traits automatically influence:
 - station dwell time
 - leg length and speed targets
 - ramp aggressiveness
@@ -114,6 +117,6 @@ RailOS is the C++ firmware that runs RailStation Control Tower:
 
 ---
 
-## Motto
+## Our Motto
 **Easy to enjoy.**  
 **Your train. Our brain.**
