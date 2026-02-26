@@ -28,8 +28,8 @@ const int IR_THRESHOLD = 650;
 
 const int in1Pin = 5;
 const int in2Pin = 6;
-//const int in1Pin = 7; 
-//const int in2Pin = A2; 
+//const int in1Pin = 7;
+//const int in2Pin = A2;
 
 const int RED_PIN = 2;
 const int YEL_PIN = 3;
@@ -56,13 +56,13 @@ long fwdOffsetMs = 0;
 long revOffsetMs = 1000;
 
 // ------- station ---------
-bool sensorEnabled = true;
+bool sensorEnabled = false;
 bool stationArmed = false;
 unsigned long stationTick = 0;
 
 // ----- dip behavior -----
-const int DIP_SPEED = MAX_SPEED * 3.6 / 10; // 25MPH
-const unsigned long DIP_TIME = 3600; // ms per dip
+const int DIP_SPEED = MAX_SPEED * 3.6 / 10;  // 25MPH
+const unsigned long DIP_TIME = 3600;         // ms per dip
 
 // -------- display --------
 bool lastDirection = true;
@@ -87,6 +87,8 @@ int speedToMph(int pwm) {
 }
 
 // -------- go! --------
+bool currentDirection = true;
+
 void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   Serial.println("GO!");
   unsigned long pauseTime = random(6, 20);
@@ -99,7 +101,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       Serial.print("🟢 FAST LEG ⏱ ");
       Serial.print(segment / 1000);
       Serial.println("s");
-      const char * msg;
+      const char* msg;
       snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
       draw();
       unsigned long legStartTime = millis();
@@ -108,7 +110,6 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
         updateStationLights();
       }
       // delay(segment);
-
       rampSpeed(DIP_SPEED);
       Serial.print("🟡 SLOW LEG ⏱ ");
       Serial.print(DIP_TIME / 1000);
@@ -128,13 +129,12 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     Serial.println("s");
     snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
     draw();
-      unsigned long segmentStartTime = millis();
-      while (millis() - segmentStartTime < segment) {
-        draw();
-        updateStationLights();
-      }
+    unsigned long segmentStartTime = millis();
+    while (millis() - segmentStartTime < segment) {
+      draw();
+      updateStationLights();
+    }
     //delay(segment);
-
   } else {
     Serial.print("🟢 ONLY LEG ⏱ ");
     Serial.print(runTime);
@@ -170,9 +170,8 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   unsigned long start = millis();
   while (millis() - start < 4000) {
     updateStationLights();
-    draw(); // optional but keeps sync feel
+    draw();  // optional but keeps sync feel
   }
-
 }
 
 // -------- signal --------
@@ -194,7 +193,7 @@ void signalGreen() {
   digitalWrite(GRN_PIN, HIGH);
 }
 
-void updateSignal(int speed, bool rampUp) {
+void updateTafficSignal(int speed, bool rampUp) {
   if (speed == 0) {
     signalRed();
     return;
@@ -208,10 +207,10 @@ void updateSignal(int speed, bool rampUp) {
 
 // -------- lights --------
 
-const unsigned long ARRIVE_BLINK_MS   = 4000;
-const unsigned long DEPART_BLINK_MS   = 4000;
-const unsigned long HOLD_AFTER_LEAVE  = 3000;
-const unsigned long FADE_MS           = 3000;
+const unsigned long ARRIVE_BLINK_MS = 4000;
+const unsigned long DEPART_BLINK_MS = 4000;
+const unsigned long HOLD_AFTER_LEAVE = 3000;
+const unsigned long FADE_MS = 3000;
 
 void allOn() {
   //Serial.print("ALL ON! ");
@@ -247,7 +246,7 @@ void fadeToBlackMs(unsigned long ms) {
   }
   if (phase == 4 && elapsed >= step * 4) {
     digitalWrite(STN2_PIN, LOW);
-    phase = 0; // finished
+    phase = 0;  // finished
   }
 }
 
@@ -284,46 +283,47 @@ void updateStationLights() {
   unsigned long elapsed = millis() - stateStartTime;
 
   switch (currentStationState) {
-case ARRIVING:
-  alternateBlink(millis());
-  // may or may not be at the station yet
-  // if (elapsed >= ARRIVE_BLINK_MS)
-  //   setStationState(AT_STATION);
-  break;
+    case ARRIVING:
+      alternateBlink(millis());
+      // may or may not be at the station yet
+      // if (elapsed >= ARRIVE_BLINK_MS)
+      //   setStationState(AT_STATION);
+      break;
 
-case DEPARTING:
-  alternateBlink(millis());
-  if (elapsed >= DEPART_BLINK_MS)
-    setStationState(COOL_DOWN);
-  break;
+    case DEPARTING:
+      alternateBlink(millis());
+      if (elapsed >= DEPART_BLINK_MS)
+        setStationState(COOL_DOWN);
+      break;
 
-case COOL_DOWN:
-  static bool fading = false;
+    case COOL_DOWN:
+      static bool fading = false;
 
-  if (!fading) {
-    allOn();
-    if (elapsed >= HOLD_AFTER_LEAVE) {
-      fading = true;
-      stateStartTime = millis();
-    }
-  } else {
-    fadeToBlackMs(FADE_MS);
-    if (millis() - stateStartTime >= FADE_MS) {
-      fading = false;
-      setStationState(IDLE);
-    }
-  }
-  break;  case AT_STATION:
-    allOn(); // Solid lights while stopped
-    break;
+      if (!fading) {
+        allOn();
+        if (elapsed >= HOLD_AFTER_LEAVE) {
+          fading = true;
+          stateStartTime = millis();
+        }
+      } else {
+        fadeToBlackMs(FADE_MS);
+        if (millis() - stateStartTime >= FADE_MS) {
+          fading = false;
+          setStationState(IDLE);
+        }
+      }
+      break;
+    case AT_STATION:
+      allOn();  // Solid lights while stopped
+      break;
 
-  case IDLE:
-    // All station pins LOW
-    digitalWrite(STN1_PIN, LOW);
-    digitalWrite(STN2_PIN, LOW);
-    digitalWrite(STN3_PIN, LOW);
-    digitalWrite(STN4_PIN, LOW);
-    break;
+    case IDLE:
+      // All station pins LOW
+      digitalWrite(STN1_PIN, LOW);
+      digitalWrite(STN2_PIN, LOW);
+      digitalWrite(STN3_PIN, LOW);
+      digitalWrite(STN4_PIN, LOW);
+      break;
   }
 }
 
@@ -331,13 +331,14 @@ case COOL_DOWN:
 void writeMotor(bool forward, int pwm) {
   pwm = constrain(pwm, 0, MAX_SPEED);
   globalCurrentSpeed = pwm;
+  currentDirection = forward;
 
   if (forward) {
-    digitalWrite(in2Pin, LOW); // This stays Digital (The Ground)
-    analogWrite(in1Pin, pwm); // This uses PWM (The Speed)
+    digitalWrite(in2Pin, LOW);  // This stays Digital (The Ground)
+    analogWrite(in1Pin, pwm);   // This uses PWM (The Speed)
   } else {
-    digitalWrite(in1Pin, LOW); // This stays Digital (The Ground)
-    analogWrite(in2Pin, pwm); // This uses PWM (The Speed)
+    digitalWrite(in1Pin, LOW);  // This stays Digital (The Ground)
+    analogWrite(in2Pin, pwm);   // This uses PWM (The Speed)
   }
 }
 
@@ -351,6 +352,10 @@ void rampSpeed(int target) {
   static int current = 0;
   static bool lastSensorState = false;
   static bool dockedThisStop = false;
+  int start = current;
+  int delta = abs(target - start);
+  bool rampUp = target > current;
+
   if (target == 0) stationArmed = false;
 
   if (target != 0) dockedThisStop = false;
@@ -362,27 +367,13 @@ void rampSpeed(int target) {
     return;
   }
 
-  // if (current == 0 && target > 0) {
-  //   writeMotor(lastDirection, 255);
-  //   delay(1);
-  // }
-
-  int start = current;
-  int delta = abs(target - start);
-  bool rampUp = target > current;
-
-  updateSignal((rampUp ? 1 : current), rampUp);
+  updateTafficSignal((rampUp ? 1 : current), rampUp);
 
   while (current != target) {
-    if (sensorEnabled && target == 0 && current < 100) {
-      setStationState(ARRIVING);
-    }
-    updateStationLights();
-
     // ---- DOCKING LOGIC ----
     if (sensorEnabled && target == 0 && !dockedThisStop && current < DOCKING_SPEED) {
       Serial.println("HARD WAIT FOR SENSOR EDGE");
-      updateStationLights();
+      setStationState(ARRIVING);
       while (stationArmed == false) {
         int v = analogRead(IR_PIN);
         if (v < IR_THRESHOLD) {
@@ -395,9 +386,7 @@ void rampSpeed(int target) {
         updateStationLights();
       }
 
-
       if (sensorEnabled && target == 0 && !dockedThisStop) {
-
         // wait for tick once
         while (!stationArmed) {
           updateStationLights();
@@ -410,30 +399,26 @@ void rampSpeed(int target) {
           }
         }
 
-unsigned long waitMs = calculateStationPause(lastDirection);
-
-Serial.print("WAIT ");
-Serial.println(waitMs);
-
-unsigned long start = millis();
-
-while (millis() - start < waitMs) {
-    updateStationLights();   // keep blinking
-    draw();                  // keep UI alive
-}
+        unsigned long waitMs = calculateStationPause(lastDirection);
+        Serial.print("WAIT ");
+        Serial.println(waitMs);
+        unsigned long start = millis();
+        while (millis() - start < waitMs) {
+          updateStationLights();
+          draw();
+        }
 
         setStationState(AT_STATION);
         updateStationLights();
 
-        dockedThisStop = true; // <-- prevent re-run
+        dockedThisStop = true;  // <-- prevent re-run
         Serial.println("DOCK COMPLETE");
       }
-
     }
 
     // ---- S-CURVE RAMP ----
     int progressed = abs(current - start);
-    float phase = (delta == 0) ? 1.0 : (float) progressed / delta;
+    float phase = (delta == 0) ? 1.0 : (float)progressed / delta;
     int step = max(1, (int)(RAMP_STEP * (0.5 + 1.5 * phase * (1 - phase))));
 
     if (rampUp) {
@@ -450,53 +435,49 @@ while (millis() - start < waitMs) {
     snprintf(line2, sizeof(line2), "%d MPH", speedToMph(current));
 
     if (target == 0)
-      updateSignal(current, rampUp);
-
-    //snprintf(line3, sizeof(line3), "DOWN TO STOP");
+      updateTafficSignal(current, rampUp);
     else
       snprintf(line3, sizeof(line3), "%s %d MPH",
-        rampUp ? "RAMP TO" : "DOWN TO",
-        speedToMph(target));
+               rampUp ? "RAMP TO" : "DOWN TO",
+               speedToMph(target));
 
     writeMotor(lastDirection, current);
     draw();
     delay(RAMP_DELAY);
   }
 
-  updateSignal(current, rampUp);
+  updateTafficSignal(current, rampUp);
 }
 
 // -------- calibrate --------
 // Calibration function
 void calibrateTrain() {
-  snprintf(line1, sizeof(line1), "CALIBRATE STATION");
+  snprintf(line1, sizeof(line1), "RAMP TO START");
   draw();
   rampSpeed(MAX_SPEED);
+  snprintf(line1, sizeof(line1), "CALIBRATE STATION");
 
   // Measure FWD and REV times
-  unsigned long lapFwd = 0; //measureLap(true);
+  // unsigned long lapFwd = 0; //measureLap(true);
   unsigned long lapRev = measureLap(false);
 
   // Save results
   Persist p;
   p.version = EEPROM_VERSION;
-  p.fwdLoopMs = lapFwd;
+  // p.fwdLoopMs = lapFwd;
   p.revLoopMs = lapRev;
 
   EEPROM.put(0, p);  // Write to EEPROM
 
   // Log results
-  Serial.print("Lap FWD: ");
-  Serial.println(lapFwd);
+  // Serial.print("Lap FWD: ");
+  // Serial.println(lapFwd);
   Serial.print("Lap REV: ");
   Serial.println(lapRev);
-  Serial.print("FWD Loop Time: ");
-  Serial.println(p.fwdLoopMs);
+  // Serial.print("FWD Loop Time: ");
+  // Serial.println(p.fwdLoopMs);
   Serial.print("REV Loop Time: ");
   Serial.println(p.revLoopMs);
-
-  snprintf(line1, sizeof(line1), "DONE");
-  draw();
 }
 
 void loadFromEEPROM() {
@@ -588,10 +569,117 @@ void saveToEEPROM() {
   EEPROM.put(0, p);  // Write the calibration data to EEPROM
 }
 
+#include <avr/pgmspace.h>
+
+const char l0[] PROGMEM = "Pennsylvania Line";
+const char l1[] PROGMEM = "Hogwarts Express";
+const char l2[] PROGMEM = "California Zephyr";
+const char l3[] PROGMEM = "Reading Railroad";
+const char l4[] PROGMEM = "The Polar Express";
+const char l5[] PROGMEM = "Union Pacific R.R.";
+const char l6[] PROGMEM = "The Orient Express";
+const char l7[] PROGMEM = "Broadway Limited";
+const char l8[] PROGMEM = "The Silver Streak";
+const char l9[] PROGMEM = "The B&O Railroad";
+const char l10[] PROGMEM = "The Flying Rocket";
+const char l11[] PROGMEM = "Grand Central Line";
+const char l12[] PROGMEM = "Flying Scotsman";
+const char l13[] PROGMEM = "Cannonball Express";
+const char l14[] PROGMEM = "The Blue Comet";
+const char l15[] PROGMEM = "Taking Pelham 123";
+const char l16[] PROGMEM = "Vanderbilt Central";
+const char l17[] PROGMEM = "Broadway Limited";
+const char l18[] PROGMEM = "The Circle Line";
+const char l19[] PROGMEM = "Empire State Exp";
+const char l20[] PROGMEM = "The Great Ghan";
+const char l21[] PROGMEM = "Hudson River Ltd";
+const char l22[] PROGMEM = "20th Century Ltd";
+
+enum Schedule {
+  HIGH_FREQ,
+  PEAK,
+  OFF_PEAK
+};
+
+enum Equipment {
+  BULLET,
+  SHUTTLE,
+  FREIGHT
+};
+
+enum Service {
+  NONSTOP,
+  LIMITED,
+  UNPREDICTABLE
+};
+
+enum Range {
+  LOCAL,
+  SHORT_RUN,
+  LONG_HAUL
+};
+
+const char* const ROUTES[] PROGMEM = {
+  l0, l1, l2, l3, l4, l5, l6, l7, l8, l9,
+  l10, l11, l12, l13, l14, l15, l16, l17, l18, l19,
+  l20, l21, l22
+};
+
+const int ROUTE_COUNT = sizeof(ROUTES) / sizeof(ROUTES[0]);
+
+void showTitle(int id) {
+  if (id < 0 || id >= ROUTE_COUNT) return;
+
+  strcpy_P(line1,
+           (char*)pgm_read_word(&(ROUTES[id])));
+
+  draw();
+}
+
+void _old_showTitle(int id) {
+  if (id < 0 || id >= ROUTE_COUNT) return;
+  strncpy(line1, ROUTES[id], sizeof(line1));
+  draw();
+}
+
+
+struct RouteProfile {
+  uint8_t titleId;
+  uint8_t schedule;
+  uint8_t equipment;
+  uint8_t service;
+  uint8_t range;
+};
+
+const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
+  { 0, PEAK, SHUTTLE, LIMITED, SHORT_RUN },          // Pennsylvania Line
+  { 1, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },       // Hogwarts Express
+  { 2, PEAK, BULLET, LIMITED, LONG_HAUL },           // California Zephyr
+  { 3, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },         // Reading Railroad
+  { 4, OFF_PEAK, SHUTTLE, LIMITED, LONG_HAUL },      // The Polar Express
+  { 5, PEAK, FREIGHT, LIMITED, LONG_HAUL },          // Union Pacific R.R.
+  { 6, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },       // The Orient Express
+  { 7, PEAK, BULLET, LIMITED, LONG_HAUL },           // Broadway Limited
+  { 8, HIGH_FREQ, BULLET, NONSTOP, SHORT_RUN },      // The Silver Streak
+  { 9, OFF_PEAK, FREIGHT, LIMITED, SHORT_RUN },      // The B&O Railroad
+  { 10, PEAK, BULLET, NONSTOP, SHORT_RUN },          // The Flying Rocket
+  { 11, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },        // Grand Central Line
+  { 12, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },      // Flying Scotsman
+  { 13, PEAK, BULLET, LIMITED, SHORT_RUN },          // Cannonball Express
+  { 14, OFF_PEAK, SHUTTLE, LIMITED, SHORT_RUN },     // The Blue Comet
+  { 15, HIGH_FREQ, BULLET, NONSTOP, LOCAL },         // Taking Pelham 123
+  { 16, PEAK, SHUTTLE, LIMITED, LONG_HAUL },         // Vanderbilt Central
+  { 17, PEAK, BULLET, NONSTOP, LONG_HAUL },          // Broadway Limited (duplicate title entry)
+  { 18, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL },  // The Circle Line
+  { 19, PEAK, BULLET, NONSTOP, LONG_HAUL },          // Empire State Exp
+  { 20, OFF_PEAK, SHUTTLE, LIMITED, LONG_HAUL },     // The Great Ghan
+  { 21, PEAK, SHUTTLE, LIMITED, LONG_HAUL },         // Hudson River Ltd
+  { 22, PEAK, BULLET, NONSTOP, LONG_HAUL }           // 20th Century Ltd
+};
+
 // -------- routes --------
 void pelhamRail() {
-  snprintf(line1, sizeof(line1), "%s", "Taking Pelham 123");
-  draw();
+  showTitle(0);
   bool dir = true;
   for (int i = 0; i < 4; i++) {
     go(dir, MAX_SPEED, 5, 0);
@@ -600,9 +688,7 @@ void pelhamRail() {
 }
 
 void readingRailroad() {
-  snprintf(line1, sizeof(line1), "%s", "Reading Railroad");
-  draw();
-
+  showTitle(1);
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
@@ -612,9 +698,7 @@ void readingRailroad() {
 }
 
 void grandCentral() {
-  snprintf(line1, sizeof(line1), "%s", "Grand Central Line");
-  draw();
-
+  showTitle(2);
   bool dir = true;
   int spd = random(MAX_SPEED * 0.75, MAX_SPEED);
 
@@ -625,9 +709,7 @@ void grandCentral() {
 }
 
 void hudsonLine() {
-  snprintf(line1, sizeof(line1), "%s", "Hudson Limited");
-  draw();
-
+  showTitle(3);
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
@@ -637,9 +719,7 @@ void hudsonLine() {
 }
 
 void pennLine() {
-  snprintf(line1, sizeof(line1), "%s", "Pennsylvania Line");
-  draw();
-
+  showTitle(4);
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
@@ -649,9 +729,7 @@ void pennLine() {
 }
 
 void vanderbiltCentral() {
-  snprintf(line1, sizeof(line1), "%s", "Vanderbilt Central");
-  draw();
-
+  showTitle(5);
   bool dir = true;
 
   for (int i = 0; i < 4; i++) {
@@ -661,9 +739,7 @@ void vanderbiltCentral() {
 }
 
 void bAndO() {
-  snprintf(line1, sizeof(line1), "%s", "The B&O Railroad");
-  draw();
-
+  showTitle(6);
   bool dir = true;
 
   for (int i = 0; i < 2; i++) {
@@ -673,9 +749,7 @@ void bAndO() {
 }
 
 void circleOfStops() {
-  snprintf(line1, sizeof(line1), "%s", "The Circle Line");
-  draw();
-
+  showTitle(7);
   bool dir = true;
   int spd = random(MAX_SPEED * 0.75, MAX_SPEED);
 
@@ -686,9 +760,7 @@ void circleOfStops() {
 }
 
 void orientExpress() {
-  snprintf(line1, sizeof(line1), "%s", "The Orient Express");
-  draw();
-
+  showTitle(8);
   bool dir = true;
   int spd = random(MAX_SPEED * 0.75, MAX_SPEED);
 
@@ -699,24 +771,19 @@ void orientExpress() {
 }
 
 void jessTrain() {
-  snprintf(line1, sizeof(line1), "%s", "Rio-Jess Express");
-  draw();
-
+  showTitle(9);
   for (int i = 0; i < 4; i++) {
     bool dir = (i % 2);
-    int spd = MAX_SPEED;
+    int spd = random(MAX_SPEED * 0.95, MAX_SPEED);
     go(dir, spd,
-      random(20, 60),
-      random(2, 5));
+       random(20, 40),
+       random(2, 5));
   }
 }
 
 void longTrainRunning() {
-  snprintf(line1, sizeof(line1), "%s", "Long Train Running");
-  draw();
-
+  showTitle(10);
   int spd = random(MAX_SPEED * 0.85, MAX_SPEED);
-
   for (int i = 0; i < 2; i++) {
     go(true, spd, 43, 4);
     go(false, spd, 43, 4);
@@ -724,82 +791,73 @@ void longTrainRunning() {
 }
 
 void gentleWander() {
-  snprintf(line1, sizeof(line1), "%s", "Union Pacific R.R.");
-  draw();
-
+  showTitle(11);
   for (int i = 0; i < 15; i++) {
     bool dir = (i % 2);
     int spd = random(MAX_SPEED * 0.65, MAX_SPEED * 0.75);
     int dips = random(5, 9);
     go(dir, spd,
-      random(80, 105),
-      dips);
+       random(80, 105),
+       dips);
   }
 }
 
 void silverStreak() {
-  snprintf(line1, sizeof(line1), "%s", "The Silver Streak");
-  draw();
-
+  showTitle(12);
   for (int i = 0; i < 4; i++) {
     bool dir = (i % 2);
     go(dir, random(MAX_SPEED * 0.85, MAX_SPEED),
-      20,
-      0);
+       20,
+       0);
   }
 }
 
 // -------- setup --------
 void setup() {
   Serial.begin(115200);
-
   Serial.println("Serial Established.");
 
-  Serial.println("Motor Controller Pin Modes");
   pinMode(in1Pin, OUTPUT);
   pinMode(in2Pin, OUTPUT);
   digitalWrite(in1Pin, LOW);
   digitalWrite(in2Pin, LOW);
+  Serial.println("Motor Controller Pin Modes Set");
 
-  Serial.println("Initialize Display Driver.");
   u8g2.begin();
   u8g2.clearBuffer();
+  Serial.println("Display Driver Initialized.");
 
-  Serial.println("Calibrate Train.");
-  snprintf(line1, sizeof(line1), "CALIBRATING");
-  draw();
+  pinMode(IR_PIN, INPUT);
+  Serial.println("IR Sensor Connected.");
 
-  // Load the saved calibration settings from EEPROM
   loadFromEEPROM();
+  Serial.println("EPROM Liaded.");
 
-  // Always run calibration on startup
-  calibrateTrain();
+  if (sensorEnabled) {
+    snprintf(line1, sizeof(line1), "CALIBRATING");
+    draw();
+    calibrateTrain();
+    Serial.println("Train Calibration Complete.");
+  }
 
-  // Display finished setup message
-  snprintf(line1, sizeof(line1), "DONEKSI");
-  draw();
-
-  Serial.println("Station Light Setup.");
   pinMode(STN1_PIN, OUTPUT);
   pinMode(STN2_PIN, OUTPUT);
   pinMode(STN3_PIN, OUTPUT);
   pinMode(STN4_PIN, OUTPUT);
+  Serial.println("Station Lights Setup.");
 
-  Serial.println("Traffic Light Setup.");
   pinMode(RED_PIN, OUTPUT);
   pinMode(YEL_PIN, OUTPUT);
   pinMode(GRN_PIN, OUTPUT);
-
-  Serial.println("IR Sensor Setup.");
-  pinMode(IR_PIN, INPUT);
+  Serial.println("Traffic Lights Setup.");
 
   Serial.println("BOOT");
 }
 
 // -------- draw --------
-void toUpper(char * s) {
-  for (;* s; s++) {
-    if ( * s >= 'a' && * s <= 'z') * s -= 32;
+void toUpper(char* s) {
+  for (; *s; s++) {
+    if (*s >= 'a' && *s <= 'z') *s -= 32;
   }
 }
 
@@ -814,8 +872,7 @@ void draw() {
     u8g2.drawStr(
       (128 - u8g2.getStrWidth(line1)) / 2,
       9,
-      line1
-    );
+      line1);
     u8g2.setDrawColor(1);
     u8g2.setFont(u8g2_font_logisoso32_tn);
     u8g2.drawBox(0, 14, 128, 36);
@@ -827,12 +884,11 @@ void draw() {
     u8g2.drawStr(
       numRightEdge - numWidth,
       48,
-      line2
-    );
+      line2);
 
     u8g2.setFont(u8g2_font_ncenB18_tr);
     u8g2.drawStr(55, 48, "MPH");
-    const char * statusStr;
+    const char* statusStr;
     if (globalCurrentSpeed == 0) {
       statusStr = "HALTED";
     } else {
@@ -842,22 +898,87 @@ void draw() {
     u8g2.drawStr(
       58,
       26,
-      statusStr
-    );
+      statusStr);
 
     u8g2.setDrawColor(1);
     u8g2.setFont(u8g2_font_9x15_tr);
     u8g2.drawStr(
       (130 - u8g2.getStrWidth(line3)) / 2,
       64,
-      line3
-    );
+      line3);
 
   } while (u8g2.nextPage());
 }
 
 // -------- loop --------
+
+struct OperatingState {
+  uint8_t lineId;
+  uint8_t schedule;
+  uint8_t equipment;
+  uint8_t service;
+  uint8_t range;
+};
+
+OperatingState current;
+
+void runRoutes() {
+  for (uint8_t i = 0; i < ROUTE_COUNT; i++) {
+    runRoute(i);
+  }
+}
+
+void runRoute(uint8_t index) {
+  memcpy_P(&current, &ROUTE_DEFAULTS[index], sizeof(RouteProfile));
+  showTitle(current.lineId);
+
+  // -------- Schedule → legs --------
+  uint8_t legs;
+  switch (current.schedule) {
+    case HIGH_FREQ: legs = 6; break;
+    case PEAK: legs = 4; break;
+    case OFF_PEAK: legs = 2; break;
+  }
+
+  // -------- Equipment → speed --------
+  uint16_t baseSpeed;
+  switch (current.equipment) {
+    case BULLET: baseSpeed = MAX_SPEED; break;
+    case SHUTTLE: baseSpeed = MAX_SPEED * 0.90; break;
+    case FREIGHT: baseSpeed = MAX_SPEED * 0.70; break;
+  }
+
+  // Add slight realism variation (±10%)
+  baseSpeed = baseSpeed * random(90, 110) / 100;
+
+  // -------- Range → duration --------
+  uint16_t runTime;
+  switch (current.range) {
+    case LOCAL: runTime = 12; break;
+    case SHORT_RUN: runTime = 20; break;
+    case LONG_HAUL: runTime = 40; break;
+  }
+
+  // -------- Service → dips --------
+  uint8_t dips;
+  switch (current.service) {
+    case NONSTOP: dips = 0; break;
+    case LIMITED: dips = 2; break;
+    case UNPREDICTABLE: dips = random(1, 5); break;
+  }
+
+  // -------- Execute --------
+  for (uint8_t i = 0; i < legs; i++) {
+    go(currentDirection, baseSpeed, runTime, dips);
+    currentDirection = !currentDirection;
+  }
+}
+
 void loop() {
+  runRoutes();
+}
+
+void _original_loop() {
   Serial.println("LOOP START");
   pelhamRail();
   vanderbiltCentral();
