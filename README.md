@@ -2,7 +2,7 @@
 ### Powered by RailOS™
 
 > **A luxury smart power controller for any model train.**  
-> RailStation replaces a “dumb” power supply with our special **control tower**. A smart control tower is a power controller with smooth motion, a large digital display, automatic station docking, and synchronized signal and lighting choreography.
+> RailStation replaces a “dumb” power supply with our special **control tower**. A smart control tower is a power controller with an integrated full-size traffic light; smooth motion, a large digital display, automatic station docking, and synchronized signal and lighting choreography.
 > **Easy to enjoy.** Grab the knob anytime for manual override—let go and it glides back into automation. The large display changes with a click to show the list of Routes and you can scroll and pipck another Route, or click and hold a long-press to adjust settings and save them.
 
 ---
