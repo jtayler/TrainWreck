@@ -285,9 +285,8 @@ void updateStationLights() {
   switch (currentStationState) {
     case ARRIVING:
       alternateBlink(millis());
-      // may or may not be at the station yet
-      // if (elapsed >= ARRIVE_BLINK_MS)
-      //   setStationState(AT_STATION);
+      if (elapsed >= ARRIVE_BLINK_MS)
+        setStationState(AT_STATION);
       break;
 
     case DEPARTING:
@@ -371,49 +370,40 @@ void rampSpeed(int target) {
 
   while (current != target) {
     // ---- DOCKING LOGIC ----
-    if (sensorEnabled && target == 0 && !dockedThisStop && current < DOCKING_SPEED) {
-      Serial.println("HARD WAIT FOR SENSOR EDGE");
+    if (sensorEnabled && target == 0 && !dockedThisStop && current <= DOCKING_SPEED) {
+
+      Serial.println("WAITING FOR STATION EDGE");
       setStationState(ARRIVING);
-      while (stationArmed == false) {
+
+      // Wait for sensor trigger once
+      while (!stationArmed) {
         int v = analogRead(IR_PIN);
         if (v < IR_THRESHOLD) {
+          stationArmed = true;
           stationTick = millis();
           Serial.print(v);
           Serial.println(" TICK LOCKED");
-          stationArmed = true;
-          break;
         }
         updateStationLights();
+        draw();
       }
 
-      if (sensorEnabled && target == 0 && !dockedThisStop) {
-        // wait for tick once
-        while (!stationArmed) {
-          updateStationLights();
-          int v = analogRead(IR_PIN);
-          if (v < IR_THRESHOLD) {
-            stationArmed = true;
-            stationTick = millis();
-            Serial.print(v);
-            Serial.println(" TICK LOCKED");
-          }
-        }
+      // Station pause
+      unsigned long waitMs = calculateStationPause(lastDirection);
+      Serial.print("STATION HOLD ");
+      Serial.println(waitMs);
 
-        unsigned long waitMs = calculateStationPause(lastDirection);
-        Serial.print("WAIT ");
-        Serial.println(waitMs);
-        unsigned long start = millis();
-        while (millis() - start < waitMs) {
-          updateStationLights();
-          draw();
-        }
-
-        setStationState(AT_STATION);
+      unsigned long startWait = millis();
+      while (millis() - startWait < waitMs) {
         updateStationLights();
-
-        dockedThisStop = true;  // <-- prevent re-run
-        Serial.println("DOCK COMPLETE");
+        draw();
       }
+
+      setStationState(AT_STATION);
+      updateStationLights();
+
+      dockedThisStop = true;
+      Serial.println("DOCK COMPLETE");
     }
 
     // ---- S-CURVE RAMP ----
@@ -620,7 +610,7 @@ enum Range {
 };
 
 const char* const ROUTES[] PROGMEM = {
-  l0, l1, l2, l3, l4, l5, l6, l7, l8, l9,
+  l1, l0, l2, l3, l4, l5, l6, l7, l8, l9,
   l10, l11, l12, l13, l14, l15, l16, l17, l18, l19,
   l20, l21, l22
 };
@@ -656,16 +646,16 @@ const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
   { 1, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },       // Hogwarts Express
   { 2, PEAK, BULLET, LIMITED, LONG_HAUL },           // California Zephyr
   { 3, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },         // Reading Railroad
-  { 4, OFF_PEAK, SHUTTLE, LIMITED, LONG_HAUL },      // The Polar Express
+  { 4, OFF_PEAK, SHUTTLE, UNPREDICTABLE, LONG_HAUL },      // The Polar Express
   { 5, PEAK, FREIGHT, LIMITED, LONG_HAUL },          // Union Pacific R.R.
   { 6, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },       // The Orient Express
   { 7, PEAK, BULLET, LIMITED, LONG_HAUL },           // Broadway Limited
-  { 8, HIGH_FREQ, BULLET, NONSTOP, SHORT_RUN },      // The Silver Streak
+  { 8, HIGH_FREQ, BULLET, UNPREDICTABLE, SHORT_RUN },      // The Silver Streak
   { 9, OFF_PEAK, FREIGHT, LIMITED, SHORT_RUN },      // The B&O Railroad
   { 10, PEAK, BULLET, NONSTOP, SHORT_RUN },          // The Flying Rocket
   { 11, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },        // Grand Central Line
   { 12, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },      // Flying Scotsman
-  { 13, PEAK, BULLET, LIMITED, SHORT_RUN },          // Cannonball Express
+  { 13, PEAK, BULLET, UNPREDICTABLE, SHORT_RUN },          // Cannonball Express
   { 14, OFF_PEAK, SHUTTLE, LIMITED, SHORT_RUN },     // The Blue Comet
   { 15, HIGH_FREQ, BULLET, NONSTOP, LOCAL },         // Taking Pelham 123
   { 16, PEAK, SHUTTLE, LIMITED, LONG_HAUL },         // Vanderbilt Central
@@ -676,6 +666,16 @@ const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
   { 21, PEAK, SHUTTLE, LIMITED, LONG_HAUL },         // Hudson River Ltd
   { 22, PEAK, BULLET, NONSTOP, LONG_HAUL }           // 20th Century Ltd
 };
+
+struct OperatingState {
+  uint8_t lineId;
+  uint8_t schedule;
+  uint8_t equipment;
+  uint8_t service;
+  uint8_t range;
+};
+
+OperatingState currentRoute;
 
 // -------- routes --------
 void pelhamRail() {
@@ -815,6 +815,7 @@ void silverStreak() {
 // -------- setup --------
 void setup() {
   Serial.begin(115200);
+  Serial.println();
   Serial.println("Serial Established.");
 
   pinMode(in1Pin, OUTPUT);
@@ -831,7 +832,7 @@ void setup() {
   Serial.println("IR Sensor Connected.");
 
   loadFromEEPROM();
-  Serial.println("EPROM Liaded.");
+  Serial.println("EPROM Loaded.");
 
   if (sensorEnabled) {
     snprintf(line1, sizeof(line1), "CALIBRATING");
@@ -889,11 +890,35 @@ void draw() {
     u8g2.setFont(u8g2_font_ncenB18_tr);
     u8g2.drawStr(55, 48, "MPH");
     const char* statusStr;
+
     if (globalCurrentSpeed == 0) {
       statusStr = "HALTED";
     } else {
-      statusStr = lastDirection ? "UPTOWN" : "DOWNTOWN";
+
+      const char* dirA = "UPTOWN";
+      const char* dirB = "DOWNTOWN";
+      if (currentRoute.lineId == 0) {  // Hogwarts
+        dirA = "HOGSMEADE";
+        dirB = "LONDON";
+      } else if (currentRoute.lineId == 17) {  // Circle Line
+        dirA = "CLOCKWISE";
+        dirB = "COUNTER";
+      } else if (currentRoute.lineId == 5) {  // Orient Express
+        dirA = "EASTBOUND";
+        dirB = "WESTBOUND";
+      } else if (currentRoute.lineId == 4) {  // Polar Express
+        dirA = "NORTHBOUND";
+        dirB = "SOUTHBOUND";
+      } else if (currentRoute.equipment == FREIGHT) {
+        dirA = "HEAVY HAUL";
+        dirB = "RETURN RUN";
+      } else if (currentRoute.service == UNPREDICTABLE) {
+        dirA = "INBOUND";
+        dirB = "OUTBOUND";
+      }
+      statusStr = lastDirection ? dirA : dirB;
     }
+
     u8g2.setFont(u8g2_font_7x13_tr);
     u8g2.drawStr(
       58,
@@ -912,16 +937,6 @@ void draw() {
 
 // -------- loop --------
 
-struct OperatingState {
-  uint8_t lineId;
-  uint8_t schedule;
-  uint8_t equipment;
-  uint8_t service;
-  uint8_t range;
-};
-
-OperatingState current;
-
 void runRoutes() {
   for (uint8_t i = 0; i < ROUTE_COUNT; i++) {
     runRoute(i);
@@ -929,12 +944,12 @@ void runRoutes() {
 }
 
 void runRoute(uint8_t index) {
-  memcpy_P(&current, &ROUTE_DEFAULTS[index], sizeof(RouteProfile));
-  showTitle(current.lineId);
+  memcpy_P(&currentRoute, &ROUTE_DEFAULTS[index], sizeof(RouteProfile));
+  showTitle(currentRoute.lineId);
 
   // -------- Schedule → legs --------
   uint8_t legs;
-  switch (current.schedule) {
+  switch (currentRoute.schedule) {
     case HIGH_FREQ: legs = 6; break;
     case PEAK: legs = 4; break;
     case OFF_PEAK: legs = 2; break;
@@ -942,7 +957,7 @@ void runRoute(uint8_t index) {
 
   // -------- Equipment → speed --------
   uint16_t baseSpeed;
-  switch (current.equipment) {
+  switch (currentRoute.equipment) {
     case BULLET: baseSpeed = MAX_SPEED; break;
     case SHUTTLE: baseSpeed = MAX_SPEED * 0.90; break;
     case FREIGHT: baseSpeed = MAX_SPEED * 0.70; break;
@@ -953,7 +968,7 @@ void runRoute(uint8_t index) {
 
   // -------- Range → duration --------
   uint16_t runTime;
-  switch (current.range) {
+  switch (currentRoute.range) {
     case LOCAL: runTime = 12; break;
     case SHORT_RUN: runTime = 20; break;
     case LONG_HAUL: runTime = 40; break;
@@ -961,7 +976,7 @@ void runRoute(uint8_t index) {
 
   // -------- Service → dips --------
   uint8_t dips;
-  switch (current.service) {
+  switch (currentRoute.service) {
     case NONSTOP: dips = 0; break;
     case LIMITED: dips = 2; break;
     case UNPREDICTABLE: dips = random(1, 5); break;
