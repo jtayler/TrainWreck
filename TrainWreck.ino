@@ -584,6 +584,7 @@ const char l19[] PROGMEM = "Empire State Exp";
 const char l20[] PROGMEM = "The Great Ghan";
 const char l21[] PROGMEM = "Hudson River Ltd";
 const char l22[] PROGMEM = "20th Century Ltd";
+const char l23[] PROGMEM = "Thomas & Friends";
 
 enum Schedule {
   HIGH_FREQ,
@@ -610,9 +611,9 @@ enum Range {
 };
 
 const char* const ROUTES[] PROGMEM = {
-  l1, l0, l2, l3, l4, l5, l6, l7, l8, l9,
+  l0, l1, l2, l3, l4, l5, l6, l7, l8, l9,
   l10, l11, l12, l13, l14, l15, l16, l17, l18, l19,
-  l20, l21, l22
+  l20, l21, l22, l23
 };
 
 const int ROUTE_COUNT = sizeof(ROUTES) / sizeof(ROUTES[0]);
@@ -631,7 +632,6 @@ void _old_showTitle(int id) {
   strncpy(line1, ROUTES[id], sizeof(line1));
   draw();
 }
-
 
 struct RouteProfile {
   uint8_t titleId;
@@ -664,7 +664,8 @@ const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
   { 19, PEAK, BULLET, NONSTOP, LONG_HAUL },            // Empire State Exp
   { 20, OFF_PEAK, SHUTTLE, LIMITED, LONG_HAUL },       // The Great Ghan
   { 21, PEAK, SHUTTLE, LIMITED, LONG_HAUL },           // Hudson River Ltd
-  { 22, PEAK, BULLET, NONSTOP, LONG_HAUL }             // 20th Century Ltd
+  { 22, PEAK, BULLET, NONSTOP, LONG_HAUL },            // 20th Century Ltd
+  { 23, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL }     // Thomas & Friends
 };
 
 struct OperatingState {
@@ -675,142 +676,7 @@ struct OperatingState {
   uint8_t range;
 };
 
-OperatingState currentRoute;
-
-// -------- routes --------
-void pelhamRail() {
-  showTitle(0);
-  bool dir = true;
-  for (int i = 0; i < 4; i++) {
-    go(dir, MAX_SPEED, 5, 0);
-    dir = !dir;
-  }
-}
-
-void readingRailroad() {
-  showTitle(1);
-  bool dir = true;
-
-  for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED, 20, 0);
-    dir = !dir;
-  }
-}
-
-void grandCentral() {
-  showTitle(2);
-  bool dir = true;
-  int spd = random(MAX_SPEED * 0.75, MAX_SPEED);
-
-  for (int i = 0; i < 4; i++) {
-    dir = !dir;
-    go(dir, spd, 40, 4);
-  }
-}
-
-void hudsonLine() {
-  showTitle(3);
-  bool dir = true;
-
-  for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED - 10, 20, 1);
-    dir = !dir;
-  }
-}
-
-void pennLine() {
-  showTitle(4);
-  bool dir = true;
-
-  for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED - 10, 20, 1);
-    dir = !dir;
-  }
-}
-
-void vanderbiltCentral() {
-  showTitle(5);
-  bool dir = true;
-
-  for (int i = 0; i < 4; i++) {
-    go(dir, MAX_SPEED - 4, 20, 1);
-    dir = !dir;
-  }
-}
-
-void bAndO() {
-  showTitle(6);
-  bool dir = true;
-
-  for (int i = 0; i < 2; i++) {
-    go(dir, MAX_SPEED, 16, 0);
-    dir = !dir;
-  }
-}
-
-void circleOfStops() {
-  showTitle(7);
-  bool dir = true;
-  int spd = random(MAX_SPEED * 0.75, MAX_SPEED);
-
-  for (int i = 0; i < 8; i++) {
-    go(dir, spd, 16, 1);
-    dir = !dir;
-  }
-}
-
-void orientExpress() {
-  showTitle(8);
-  bool dir = true;
-  int spd = random(MAX_SPEED * 0.75, MAX_SPEED);
-
-  for (int i = 0; i < 4; i++) {
-    go(dir, spd, 16, 1);
-    dir = !dir;
-  }
-}
-
-void jessTrain() {
-  showTitle(9);
-  for (int i = 0; i < 4; i++) {
-    bool dir = (i % 2);
-    int spd = random(MAX_SPEED * 0.95, MAX_SPEED);
-    go(dir, spd,
-       random(20, 40),
-       random(2, 5));
-  }
-}
-
-void longTrainRunning() {
-  showTitle(10);
-  int spd = random(MAX_SPEED * 0.85, MAX_SPEED);
-  for (int i = 0; i < 2; i++) {
-    go(true, spd, 43, 4);
-    go(false, spd, 43, 4);
-  }
-}
-
-void gentleWander() {
-  showTitle(11);
-  for (int i = 0; i < 15; i++) {
-    bool dir = (i % 2);
-    int spd = random(MAX_SPEED * 0.65, MAX_SPEED * 0.75);
-    int dips = random(5, 9);
-    go(dir, spd,
-       random(80, 105),
-       dips);
-  }
-}
-
-void silverStreak() {
-  showTitle(12);
-  for (int i = 0; i < 4; i++) {
-    bool dir = (i % 2);
-    go(dir, random(MAX_SPEED * 0.85, MAX_SPEED),
-       20,
-       0);
-  }
-}
+RouteProfile currentRoute;
 
 // -------- setup --------
 void setup() {
@@ -894,28 +760,32 @@ void draw() {
     if (globalCurrentSpeed == 0) {
       statusStr = "HALTED";
     } else {
-
       const char* dirA = "UPTOWN";
       const char* dirB = "DOWNTOWN";
-      if (currentRoute.lineId == 0) {  // Hogwarts
+
+      if (currentRoute.titleId == 1) {  // Hogwarts Express
         dirA = "HOGSMEADE";
         dirB = "LONDON";
-      } else if (currentRoute.lineId == 17) {  // Circle Line
+      } else if (currentRoute.titleId == 18) {  // The Circle Line
         dirA = "CLOCKWISE";
         dirB = "COUNTER";
-      } else if (currentRoute.lineId == 5) {  // Orient Express
+      } else if (currentRoute.titleId == 0 || currentRoute.titleId == 6 || currentRoute.titleId == 2) {  // Penn, Orient, Zephyr
         dirA = "EASTBOUND";
         dirB = "WESTBOUND";
-      } else if (currentRoute.lineId == 4) {  // Polar Express
+      } else if (currentRoute.titleId == 4 || currentRoute.titleId == 21) {  // Polar Express, Hudson
         dirA = "NORTHBOUND";
         dirB = "SOUTHBOUND";
       } else if (currentRoute.equipment == FREIGHT) {
         dirA = "HEAVY HAUL";
         dirB = "RETURN RUN";
+      } else if (currentRoute.equipment == SHUTTLE) {
+        dirA = "CROSSTOWN";
+        dirB = "INTERURBAN";
       } else if (currentRoute.service == UNPREDICTABLE) {
         dirA = "INBOUND";
         dirB = "OUTBOUND";
       }
+
       statusStr = lastDirection ? dirA : dirB;
     }
 
@@ -945,7 +815,7 @@ void runRoutes() {
 
 void runRoute(uint8_t index) {
   memcpy_P(&currentRoute, &ROUTE_DEFAULTS[index], sizeof(RouteProfile));
-  showTitle(currentRoute.lineId);
+  showTitle(currentRoute.titleId);
 
   // -------- Schedule → legs --------
   uint8_t legs;
@@ -991,21 +861,4 @@ void runRoute(uint8_t index) {
 
 void loop() {
   runRoutes();
-}
-
-void _original_loop() {
-  Serial.println("LOOP START");
-  pelhamRail();
-  vanderbiltCentral();
-  gentleWander();
-  pennLine();
-  hudsonLine();
-  grandCentral();
-  readingRailroad();
-  silverStreak();
-  bAndO();
-  jessTrain();
-  orientExpress();
-  circleOfStops();
-  longTrainRunning();
 }
