@@ -820,9 +820,9 @@ void runRoute(uint8_t index) {
   // -------- Schedule → legs --------
   uint8_t legs;
   switch (currentRoute.schedule) {
-    case HIGH_FREQ: legs = 6; break;
-    case PEAK: legs = 4; break;
-    case OFF_PEAK: legs = 2; break;
+    case HIGH_FREQ: legs = random(4, 6); break;
+    case PEAK: legs = random(2, 4); break;
+    case OFF_PEAK: legs = random(0, 2); break;
   }
 
   // -------- Equipment → speed --------
@@ -839,17 +839,17 @@ void runRoute(uint8_t index) {
   // -------- Range → duration --------
   uint16_t runTime;
   switch (currentRoute.range) {
-    case LOCAL: runTime = 12; break;
-    case SHORT_RUN: runTime = 20; break;
-    case LONG_HAUL: runTime = 40; break;
+    case LOCAL: runTime = random(6, 12); break;
+    case SHORT_RUN: runTime = random(12, 20); break;
+    case LONG_HAUL: runTime = random(20, 40); break;
   }
 
   // -------- Service → dips --------
   uint8_t dips;
   switch (currentRoute.service) {
     case NONSTOP: dips = 0; break;
-    case LIMITED: dips = 2; break;
-    case UNPREDICTABLE: dips = random(1, 5); break;
+    case LIMITED: dips = random(1, 3); break;
+    case UNPREDICTABLE: dips = random(0, 5); break;
   }
 
   // -------- Execute --------
