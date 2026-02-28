@@ -1,6 +1,7 @@
 #include <SPI.h>
 #include <EEPROM.h>
 #include <U8g2lib.h>
+#include <avr/pgmspace.h>
 
 #define CS_PIN 10
 #define DC_PIN 9
@@ -17,7 +18,6 @@ struct Persist {
   long fwdOffsetMs;
   long revOffsetMs;
 };
-
 
 // --- display driver ---
 U8G2_SH1106_128X64_NONAME_1_4W_HW_SPI u8g2(U8G2_R0, 10, 9, 8);
@@ -65,10 +65,11 @@ const int DIP_SPEED = MAX_SPEED * 3.6 / 10;  // 25MPH
 const unsigned long DIP_TIME = 3600;         // ms per dip
 
 // -------- display --------
+bool isMPH = true;
 bool lastDirection = true;
 int globalCurrentSpeed = 0;
 char line1[64] = "STATUS";
-char line2[64] = "0 MPH";
+char line2[64] = "0";
 char line3[64] = "READY";
 
 enum StationState {
@@ -84,6 +85,11 @@ unsigned long stateStartTime = 0;
 int speedToMph(int pwm) {
   pwm = constrain(pwm, 0, MAX_SPEED);
   return (pwm * MAX_MPH) / MAX_SPEED;
+}
+
+int speedToKph(int pwm) {
+  pwm = constrain(pwm, 0, MAX_SPEED);
+  return (pwm * MAX_MPH * 161) / (MAX_SPEED * 100);
 }
 
 // -------- go! --------
@@ -422,18 +428,33 @@ void rampSpeed(int target) {
     // ---- OUTPUT ----
     globalCurrentSpeed = current;
 
-    snprintf(line2, sizeof(line2), "%d MPH", speedToMph(current));
+    if (isMPH) {
+      snprintf(line2, sizeof(line2), "%d MPH", speedToMph(current));
+    } else {
+      snprintf(line2, sizeof(line2), "%d KPH", speedToKph(current));
+    }
 
-    if (target == 0)
+    if (target == 0) {
       updateTafficSignal(current, rampUp);
-    else
-      snprintf(line3, sizeof(line3), "%s %d MPH",
-               rampUp ? "RAMP TO" : "DOWN TO",
-               speedToMph(target));
-
+    } else {
+      if (isMPH) {
+        snprintf(line3, sizeof(line3), "%s %d MPH",
+                 rampUp ? "RAMP TO" : "DOWN TO",
+                 speedToMph(target));
+      } else {
+        snprintf(line3, sizeof(line3), "%s %d",
+                 rampUp ? "RAMP TO" : "DOWN TO",
+                 speedToKph(target));
+      }
+    }
     writeMotor(lastDirection, current);
-    draw();
-    delay(RAMP_DELAY);
+    unsigned long rampStartTime = millis();
+    while (millis() - rampStartTime < RAMP_DELAY) {
+      draw();
+      updateStationLights();
+    }
+
+    //delay(RAMP_DELAY);
   }
 
   updateTafficSignal(current, rampUp);
@@ -559,8 +580,6 @@ void saveToEEPROM() {
   EEPROM.put(0, p);  // Write the calibration data to EEPROM
 }
 
-#include <avr/pgmspace.h>
-
 const char l0[] PROGMEM = "Pennsylvania Line";
 const char l1[] PROGMEM = "Hogwarts Express";
 const char l2[] PROGMEM = "California Zephyr";
@@ -624,12 +643,6 @@ void showTitle(int id) {
   strcpy_P(line1,
            (char*)pgm_read_word(&(ROUTES[id])));
 
-  draw();
-}
-
-void _old_showTitle(int id) {
-  if (id < 0 || id >= ROUTE_COUNT) return;
-  strncpy(line1, ROUTES[id], sizeof(line1));
   draw();
 }
 
@@ -729,6 +742,9 @@ void toUpper(char* s) {
 }
 
 void draw() {
+  int color = 0;
+  int backColor = 1;
+
   u8g2.firstPage();
   do {
     u8g2.clearBuffer();
@@ -740,21 +756,28 @@ void draw() {
       (128 - u8g2.getStrWidth(line1)) / 2,
       9,
       line1);
-    u8g2.setDrawColor(1);
+    u8g2.setDrawColor(backColor);
     u8g2.setFont(u8g2_font_logisoso32_tn);
     u8g2.drawBox(0, 14, 128, 36);
 
-    u8g2.setDrawColor(0);
+    u8g2.setDrawColor(color);
     u8g2.setFont(u8g2_font_logisoso32_tn);
     int numWidth = u8g2.getStrWidth(line2);
     int numRightEdge = 69;
+    if (line2 >= 100) {
+      //numRightEdge = 76;
+    }
     u8g2.drawStr(
       numRightEdge - numWidth,
       48,
       line2);
 
     u8g2.setFont(u8g2_font_ncenB18_tr);
-    u8g2.drawStr(55, 48, "MPH");
+    if (isMPH) {
+      u8g2.drawStr(56, 48, "MPH");
+    } else {
+      u8g2.drawStr(56, 48, "KPH");
+    }
     const char* statusStr;
 
     if (globalCurrentSpeed == 0) {
@@ -795,7 +818,7 @@ void draw() {
       26,
       statusStr);
 
-    u8g2.setDrawColor(1);
+    u8g2.setDrawColor(backColor);
     u8g2.setFont(u8g2_font_9x15_tr);
     u8g2.drawStr(
       (130 - u8g2.getStrWidth(line3)) / 2,
