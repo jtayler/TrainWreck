@@ -41,12 +41,12 @@ const int STN3_PIN = A3;
 const int STN4_PIN = A4;
 
 // -------- tuning ---------
-const int MAX_SPEED = 170;
-const int RAMP_STEP = 5;
+const int MAX_SPEED = 255;
+const int RAMP_STEP = 10;
 const int RAMP_DELAY = 1;
-const int MIN_SPEED = 0;
+const int MIN_SPEED = 10;
 const float MAX_MPH = 72.0;
-const int DOCKING_SPEED = 58;
+const int DOCKING_SPEED = 165;
 
 // ----- station stop -------
 unsigned long fwdLoopMs = 0;
@@ -56,7 +56,7 @@ long fwdOffsetMs = 0;
 long revOffsetMs = 1000;
 
 // ------- station ---------
-bool sensorEnabled = false;
+bool sensorEnabled = true;
 bool stationArmed = false;
 unsigned long stationTick = 0;
 
@@ -99,7 +99,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   Serial.println("GO!");
   unsigned long pauseTime = random(6, 20);
   setDirection(forward);
-  rampSpeed(random(speed * 0.95, speed));
+  rampSpeed(random(speed * 0.98, speed));
 
   if (dipCount > 0) {
     unsigned long segment = (runTime * 1000) / (dipCount + 1);
@@ -465,28 +465,38 @@ void rampSpeed(int target) {
 void calibrateTrain() {
   snprintf(line1, sizeof(line1), "RAMP TO START");
   draw();
+
+  unsigned long rampTestStartTime = millis();
+  unsigned long rampTime = 0;
   rampSpeed(MAX_SPEED);
+  rampTime = rampTestStartTime - millis();
+  Serial.print("rampTime: ");
+  Serial.println(rampTime);
+
   snprintf(line1, sizeof(line1), "CALIBRATE STATION");
+  delay(1000);
 
   // Measure FWD and REV times
-  // unsigned long lapFwd = 0; //measureLap(true);
+  unsigned long lapFwd = 0;
+  measureLap(true);
+  delay(1000);
   unsigned long lapRev = measureLap(false);
 
   // Save results
   Persist p;
   p.version = EEPROM_VERSION;
-  // p.fwdLoopMs = lapFwd;
+  p.fwdLoopMs = lapFwd;
   p.revLoopMs = lapRev;
 
   EEPROM.put(0, p);  // Write to EEPROM
 
   // Log results
-  // Serial.print("Lap FWD: ");
-  // Serial.println(lapFwd);
+  Serial.print("Lap FWD: ");
+  Serial.println(lapFwd);
   Serial.print("Lap REV: ");
   Serial.println(lapRev);
-  // Serial.print("FWD Loop Time: ");
-  // Serial.println(p.fwdLoopMs);
+  Serial.print("FWD Loop Time: ");
+  Serial.println(p.fwdLoopMs);
   Serial.print("REV Loop Time: ");
   Serial.println(p.revLoopMs);
 }
@@ -509,7 +519,7 @@ unsigned long calculateStationPause(bool forward) {
   if (forward) {
     return fwdOffsetMs;
   } else {
-    return ((revLoopMs * 0.51) + revOffsetMs) - fwdOffsetMs;
+    return ((revLoopMs * 0.525) + revOffsetMs) - fwdOffsetMs;
   }
 }
 // Function to measure lap time
@@ -545,6 +555,8 @@ unsigned long measureLap(bool forward) {
   }
 
   Serial.println("Clear.");
+
+  delay(1000);
 
   unsigned long start = millis();
   Serial.println("Timing...");
@@ -630,9 +642,9 @@ enum Range {
 };
 
 const char* const ROUTES[] PROGMEM = {
-  l0, l1, l2, l3, l4, l5, l6, l7, l8, l9,
+  l15, l1, l2, l3, l4, l5, l6, l7, l8, l9,
   l10, l11, l12, l13, l14, l15, l16, l17, l18, l19,
-  l20, l21, l22, l23
+  l20, l21, l22, l23, l0
 };
 
 const int ROUTE_COUNT = sizeof(ROUTES) / sizeof(ROUTES[0]);
@@ -655,30 +667,30 @@ struct RouteProfile {
 };
 
 const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
-  { 0, PEAK, SHUTTLE, LIMITED, SHORT_RUN },            // Pennsylvania Line
-  { 1, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },         // Hogwarts Express
-  { 2, PEAK, BULLET, LIMITED, LONG_HAUL },             // California Zephyr
-  { 3, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },           // Reading Railroad
-  { 4, OFF_PEAK, SHUTTLE, UNPREDICTABLE, LONG_HAUL },  // The Polar Express
-  { 5, PEAK, FREIGHT, LIMITED, LONG_HAUL },            // Union Pacific R.R.
-  { 6, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },         // The Orient Express
-  { 7, PEAK, BULLET, LIMITED, LONG_HAUL },             // Broadway Limited
-  { 8, HIGH_FREQ, BULLET, UNPREDICTABLE, SHORT_RUN },  // The Silver Streak
-  { 9, OFF_PEAK, FREIGHT, LIMITED, SHORT_RUN },        // The B&O Railroad
-  { 10, PEAK, BULLET, NONSTOP, SHORT_RUN },            // The Flying Rocket
-  { 11, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },          // Grand Central Line
-  { 12, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },        // Flying Scotsman
-  { 13, PEAK, BULLET, UNPREDICTABLE, SHORT_RUN },      // Cannonball Express
-  { 14, OFF_PEAK, SHUTTLE, LIMITED, SHORT_RUN },       // The Blue Comet
-  { 15, HIGH_FREQ, BULLET, NONSTOP, LOCAL },           // Taking Pelham 123
-  { 16, PEAK, SHUTTLE, LIMITED, LONG_HAUL },           // Vanderbilt Central
-  { 17, PEAK, BULLET, NONSTOP, LONG_HAUL },            // Broadway Limited (duplicate title entry)
-  { 18, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL },    // The Circle Line
-  { 19, PEAK, BULLET, NONSTOP, LONG_HAUL },            // Empire State Exp
-  { 20, OFF_PEAK, SHUTTLE, LIMITED, LONG_HAUL },       // The Great Ghan
-  { 21, PEAK, SHUTTLE, LIMITED, LONG_HAUL },           // Hudson River Ltd
-  { 22, PEAK, BULLET, NONSTOP, LONG_HAUL },            // 20th Century Ltd
-  { 23, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL }     // Thomas & Friends
+  { 0, PEAK, SHUTTLE, LIMITED, SHORT_RUN },             // Pennsylvania Line
+  { 1, HIGH_FREQ, BULLET, NONSTOP, LONG_HAUL },         // Hogwarts Express
+  { 2, PEAK, BULLET, LIMITED, LONG_HAUL },              // California Zephyr
+  { 3, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },            // Reading Railroad
+  { 4, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LONG_HAUL },  // The Polar Express
+  { 5, PEAK, FREIGHT, LIMITED, LONG_HAUL },             // Union Pacific R.R.
+  { 6, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },          // The Orient Express
+  { 7, PEAK, BULLET, LIMITED, LONG_HAUL },              // Broadway Limited
+  { 8, HIGH_FREQ, BULLET, UNPREDICTABLE, SHORT_RUN },   // The Silver Streak
+  { 9, PEAK, FREIGHT, LIMITED, SHORT_RUN },             // The B&O Railroad
+  { 10, PEAK, BULLET, NONSTOP, SHORT_RUN },             // The Flying Rocket
+  { 11, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },           // Grand Central Line
+  { 12, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },         // Flying Scotsman
+  { 13, PEAK, BULLET, UNPREDICTABLE, SHORT_RUN },       // Cannonball Express
+  { 14, PEAK, SHUTTLE, LIMITED, SHORT_RUN },            // The Blue Comet
+  { 15, OFF_PEAK, BULLET, NONSTOP, LOCAL },             // Taking Pelham 123
+  { 16, PEAK, SHUTTLE, LIMITED, LONG_HAUL },            // Vanderbilt Central
+  { 17, PEAK, BULLET, NONSTOP, LONG_HAUL },             // Broadway Limited (duplicate title entry)
+  { 18, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL },     // The Circle Line
+  { 19, PEAK, BULLET, NONSTOP, LONG_HAUL },             // Empire State Exp
+  { 20, HIGH_FREQ, SHUTTLE, LIMITED, LONG_HAUL },       // The Great Ghan
+  { 21, PEAK, SHUTTLE, LIMITED, LONG_HAUL },            // Hudson River Ltd
+  { 22, PEAK, BULLET, NONSTOP, LONG_HAUL },             // 20th Century Ltd
+  { 23, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL }      // Thomas & Friends
 };
 
 struct OperatingState {
@@ -791,7 +803,7 @@ void draw() {
         dirB = "LONDON";
       } else if (currentRoute.titleId == 18) {  // The Circle Line
         dirA = "CLOCKWISE";
-        dirB = "COUNTER";
+        dirB = "COUNTER CW";
       } else if (currentRoute.titleId == 0 || currentRoute.titleId == 6 || currentRoute.titleId == 2) {  // Penn, Orient, Zephyr
         dirA = "EASTBOUND";
         dirB = "WESTBOUND";
@@ -845,7 +857,7 @@ void runRoute(uint8_t index) {
   switch (currentRoute.schedule) {
     case HIGH_FREQ: legs = random(4, 6); break;
     case PEAK: legs = random(2, 4); break;
-    case OFF_PEAK: legs = random(0, 2); break;
+    case OFF_PEAK: legs = 0; break;
   }
 
   // -------- Equipment → speed --------
@@ -853,7 +865,7 @@ void runRoute(uint8_t index) {
   switch (currentRoute.equipment) {
     case BULLET: baseSpeed = MAX_SPEED; break;
     case SHUTTLE: baseSpeed = MAX_SPEED * 0.90; break;
-    case FREIGHT: baseSpeed = MAX_SPEED * 0.70; break;
+    case FREIGHT: baseSpeed = MAX_SPEED * 0.80; break;
   }
 
   // Add slight realism variation (±10%)
