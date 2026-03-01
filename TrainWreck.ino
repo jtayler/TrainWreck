@@ -62,12 +62,13 @@ long revAdjustMs = 800;
 
 // ------- station ---------
 bool sensorEnabled = true;
-bool calibrateAtStartup = false;
+bool calibrateAtStartup = true;
 bool stationArmed = false;
 unsigned long stationTick = 0;
 
 // ----- dip behavior -----
-const int DIP_SPEED = MAX_SPEED * 3.6 / 10;  // 25MPH
+//const int DIP_SPEED = MAX_SPEED * 3.6 / 10;  // 25MPH
+const int DIP_SPEED = MAX_SPEED * 4.9 / 10;  // 35MPH
 const unsigned long DIP_TIME = 3600;         // ms per dip
 
 // -------- display --------
@@ -85,6 +86,7 @@ enum StationState {
   DEPARTING,
   COOL_DOWN
 };
+
 StationState currentStationState = IDLE;
 unsigned long stateStartTime = 0;
 
@@ -121,7 +123,6 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
         updateStationLights();
         readEncoderStep();
       }
-      // delay(segment);
       rampSpeed(DIP_SPEED);
       Serial.print("🟡 SLOW LEG ⏱ ");
       Serial.print(DIP_TIME / 1000);
@@ -133,7 +134,6 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
         updateStationLights();
         readEncoderStep();
       }
-      //delay(DIP_TIME);
       rampSpeed(random(speed * 0.85, speed));
     }
     Serial.print("🟢 FAST LEG ⏱ ");
@@ -146,7 +146,6 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       updateStationLights();
       readEncoderStep();
     }
-    //delay(segment);
   } else {
     Serial.print("🟢 ONLY LEG ⏱ ");
     Serial.print(runTime);
@@ -158,7 +157,6 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       updateStationLights();
       readEncoderStep();
     }
-    //delay(runTime * 1000);
   }
   Serial.print("🛑 STOP ⏱ ");
   Serial.print(pauseTime);
@@ -465,18 +463,17 @@ void rampSpeed(int target) {
 // -------- calibrate --------
 // Calibration function
 void calibrateTrain() {
-  unsigned long rampTestStartTime = millis();
+  rampSpeed(0);
+  // snprintf(line1, sizeof(line1), "CALIBRATE RAMP");
+  // unsigned long rampTestStartTime = millis();
   // rampSpeed(MAX_SPEED);
   // unsigned long rampTime = millis() - rampTestStartTime;
   // Serial.print("rampTime: ");
   // Serial.println(rampTime);
   // delay(1000);
-
   snprintf(line1, sizeof(line1), "CALIBRATE STATION");
 
-  // Measure FWD and REV times
-  unsigned long lapFwd = 0;
-  //measureLap(true);
+  unsigned long lapFwd = 0; //measureLap(true);
   //delay(1000);
   unsigned long lapRev = measureLap(false);
 
@@ -665,16 +662,7 @@ const char* const ROUTES[] PROGMEM = {
   l10, l11, l12, l13, l14, l15, l16, l17, l18, l19,
   l20, l21, l22, l23
 };
-
-const int USER_ROUTES[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 };
-const int ROUTE_COUNT = sizeof(USER_ROUTES) / sizeof(USER_ROUTES[0]);
 const int TITLE_COUNT = sizeof(ROUTES) / sizeof(ROUTES[0]);
-
-void showTitleByTitleId(uint8_t titleId) {
-  if (titleId >= TITLE_COUNT) return;
-  strcpy_P(line1, (char*)pgm_read_word(&(ROUTES[titleId])));
-  draw();
-}
 
 struct RouteProfile {
   uint8_t titleId;
@@ -710,6 +698,9 @@ const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
   { 22, PEAK, BULLET, NONSTOP, LONG_HAUL },             // 20th Century Ltd
   { 23, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL }      // Thomas & Friends
 };
+
+const int USER_ROUTES[] = { 12, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 };
+const int ROUTE_COUNT = sizeof(USER_ROUTES) / sizeof(USER_ROUTES[0]);
 
 struct OperatingState {
   uint8_t lineId;
@@ -874,6 +865,12 @@ void runRoutes() {
   }
 }
 
+void showTitleByTitleId(uint8_t titleId) {
+  if (titleId >= TITLE_COUNT) return;
+  strcpy_P(line1, (char*)pgm_read_word(&(ROUTES[titleId])));
+  draw();
+}
+
 void runRoute(uint8_t index) {
   memcpy_P(&currentRoute, &ROUTE_DEFAULTS[index], sizeof(RouteProfile));
   showTitleByTitleId(currentRoute.titleId);
@@ -889,8 +886,8 @@ void runRoute(uint8_t index) {
   uint16_t baseSpeed;
   switch (currentRoute.equipment) {
     case BULLET: baseSpeed = MAX_SPEED; break;
-    case SHUTTLE: baseSpeed = MAX_SPEED * 0.90; break;
-    case FREIGHT: baseSpeed = MAX_SPEED * 0.80; break;
+    case SHUTTLE: baseSpeed = MAX_SPEED * 0.95; break;
+    case FREIGHT: baseSpeed = MAX_SPEED * 0.90; break;
   }
 
   // -------- Range → duration --------
