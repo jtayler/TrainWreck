@@ -3,9 +3,15 @@
 #include <U8g2lib.h>
 #include <avr/pgmspace.h>
 
+// --- pins ---
+
 #define CS_PIN 10
 #define DC_PIN 9
 #define RST_PIN 8
+
+#define ENC_CLK 7
+#define ENC_DT A5
+#define ENC_SW 12
 
 // --- persistence store ---
 
@@ -56,7 +62,7 @@ long revAdjustMs = 800;
 
 // ------- station ---------
 bool sensorEnabled = true;
-bool calibrateAtStartup = true;
+bool calibrateAtStartup = false;
 bool stationArmed = false;
 unsigned long stationTick = 0;
 
@@ -109,11 +115,11 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       Serial.println("s");
       const char* msg;
       snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
-      draw();
       unsigned long legStartTime = millis();
       while (millis() - legStartTime < segment) {
         draw();
         updateStationLights();
+        readEncoderStep();
       }
       // delay(segment);
       rampSpeed(DIP_SPEED);
@@ -121,11 +127,11 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       Serial.print(DIP_TIME / 1000);
       Serial.println("s");
       snprintf(line3, sizeof(line3), "%s %ds", "SLOW LEG", DIP_TIME / 1000);
-      draw();
       unsigned long dipStartTime = millis();
       while (millis() - dipStartTime < DIP_TIME) {
         draw();
         updateStationLights();
+        readEncoderStep();
       }
       //delay(DIP_TIME);
       rampSpeed(random(speed * 0.85, speed));
@@ -134,11 +140,11 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     Serial.print(segment / 1000);
     Serial.println("s");
     snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
-    draw();
     unsigned long segmentStartTime = millis();
     while (millis() - segmentStartTime < segment) {
       draw();
       updateStationLights();
+      readEncoderStep();
     }
     //delay(segment);
   } else {
@@ -150,6 +156,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     while (millis() - onlyStartTime < runTime * 1000) {
       draw();
       updateStationLights();
+      readEncoderStep();
     }
     //delay(runTime * 1000);
   }
@@ -158,6 +165,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   Serial.println("s");
   snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
   draw();
+  readEncoderStep();
 
   rampSpeed(0);
   stateStartTime = millis();
@@ -166,6 +174,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   while (millis() - stateStartTime < pauseMs) {
     draw();
     updateStationLights();
+    readEncoderStep();
   }
 
   setStationState(DEPARTING);
@@ -174,7 +183,8 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   unsigned long start = millis();
   while (millis() - start < 4000) {
     updateStationLights();
-    draw();  // optional but keeps sync feel
+    draw();
+    readEncoderStep();
   }
 }
 
@@ -399,6 +409,7 @@ void rampSpeed(int target) {
         while (millis() - startWait < waitMs) {
           updateStationLights();
           draw();
+          readEncoderStep();
         }
 
         setStationState(AT_STATION);
@@ -445,6 +456,7 @@ void rampSpeed(int target) {
     writeMotor(lastDirection, current);
     draw();
     updateStationLights();
+    readEncoderStep();
   }
 
   updateTafficSignal(current, rampUp);
@@ -563,6 +575,28 @@ unsigned long measureLap(bool forward) {
   Serial.println("---- CALIBRATION END ----");
 
   return lap;
+}
+
+// Respond to knob turn and press.
+
+void readEncoderStep() {
+  static int lastCLK = HIGH;
+
+  int clk = digitalRead(ENC_CLK);
+
+  if (clk != lastCLK && clk == LOW) {
+    if (digitalRead(ENC_DT) != clk) {
+      Serial.println("CW");
+    } else {
+      Serial.println("CCW");
+    }
+  }
+
+  lastCLK = clk;
+
+  if (digitalRead(ENC_SW) == LOW) {
+    Serial.println("BUTTON");
+  }
 }
 
 // Save calibration values to EEPROM
@@ -715,6 +749,11 @@ void setup() {
     calibrateTrain();
     Serial.println("Train Calibration Complete.");
   }
+
+  pinMode(ENC_CLK, INPUT_PULLUP);
+  pinMode(ENC_DT, INPUT_PULLUP);
+  pinMode(ENC_SW, INPUT_PULLUP);
+  Serial.println("Control Knob Setup.");
 
   pinMode(STN1_PIN, OUTPUT);
   pinMode(STN2_PIN, OUTPUT);
