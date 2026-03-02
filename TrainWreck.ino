@@ -151,25 +151,28 @@ void manualControlLoop() {
       lastPos = pos;
       lastManualInput = millis();
 
-      if (pos < oldPos) globalCurrentSpeed += 15;
-      else globalCurrentSpeed -= 15;
-
+      if (pos < oldPos) {
+        globalCurrentSpeed += 15;
+        signalGreen();
+      } else {
+        globalCurrentSpeed -= 15;
+        signalYellow();
+      }
       globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
-      writeMotor(lastDirection, globalCurrentSpeed);
-
       if (globalCurrentSpeed == 0) {
+        signalRed();
         lastDirection = !lastDirection;
       }
+      writeMotor(lastDirection, globalCurrentSpeed);
       snprintf(line3, sizeof(line3), "MANUAL MODE");
       if (isMPH)
         snprintf(line2, sizeof(line2), "%d MPH", speedToMph(globalCurrentSpeed));
       else
         snprintf(line2, sizeof(line2), "%d KPH", speedToKph(globalCurrentSpeed));
-
       draw();
     }
 
-    if (millis() - lastManualInput > 5000) {
+    if (millis() - lastManualInput > 6000) {
       Serial.println("EXIT MANUAL");
       break;
     }
@@ -187,6 +190,8 @@ bool currentDirection = true;
 
 void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   Serial.println("GO!");
+  if (abortRoute) return;
+
   unsigned long pauseTime = random(6, 20);
   setDirection(forward);
   rampSpeed(speed);
@@ -194,15 +199,16 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   if (dipCount > 0) {
     unsigned long segment = (runTime * 1000) / (dipCount + 1);
     for (int i = 0; i < dipCount; i++) {
+      if (abortRoute) return;
       Serial.print("🟢 FAST LEG ⏱ ");
       Serial.print(segment / 1000);
       Serial.println("s");
       const char* msg;
-      snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
       unsigned long legStartTime = millis();
       while (millis() - legStartTime < segment) {
         if (abortRoute) return;
 
+        snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
         draw();
         updateStationLights();
         readEncoderStep();
@@ -211,11 +217,11 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       Serial.print("🟡 SLOW LEG ⏱ ");
       Serial.print(DIP_TIME / 1000);
       Serial.println("s");
-      snprintf(line3, sizeof(line3), "%s %ds", "SLOW LEG", DIP_TIME / 1000);
       unsigned long dipStartTime = millis();
       while (millis() - dipStartTime < DIP_TIME) {
         if (abortRoute) return;
 
+        snprintf(line3, sizeof(line3), "%s %ds", "SLOW LEG", DIP_TIME / 1000);
         draw();
         updateStationLights();
         readEncoderStep();
@@ -225,11 +231,11 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     Serial.print("🟢 FAST LEG ⏱ ");
     Serial.print(segment / 1000);
     Serial.println("s");
-    snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
     unsigned long segmentStartTime = millis();
     while (millis() - segmentStartTime < segment) {
       if (abortRoute) return;
 
+      snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
       draw();
       updateStationLights();
       readEncoderStep();
@@ -238,11 +244,11 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     Serial.print("🟢 ONLY LEG ⏱ ");
     Serial.print(runTime);
     Serial.println("s");
-    snprintf(line3, sizeof(line3), "%s %ds", "ONLY LEG", runTime);
     unsigned long onlyStartTime = millis();
     while (millis() - onlyStartTime < runTime * 1000) {
       if (abortRoute) return;
 
+      snprintf(line3, sizeof(line3), "%s %ds", "ONLY LEG", runTime);
       draw();
       updateStationLights();
       readEncoderStep();
@@ -251,8 +257,6 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   Serial.print("🛑 STOP ⏱ ");
   Serial.print(pauseTime);
   Serial.println("s");
-  snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
-  draw();
   readEncoderStep();
 
   rampSpeed(0);
@@ -262,6 +266,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   while (millis() - stateStartTime < pauseMs) {
     if (abortRoute) return;
 
+    snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
     draw();
     updateStationLights();
     readEncoderStep();
@@ -269,12 +274,12 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
 
   setStationState(DEPARTING);
   updateStationLights();
-  snprintf(line3, sizeof(line3), "%s", "NOW BOARDING");
   unsigned long start = millis();
   while (millis() - start < 4000) {
     if (abortRoute) return;
 
     updateStationLights();
+    snprintf(line3, sizeof(line3), "%s", "NOW BOARDING");
     draw();
     readEncoderStep();
   }
@@ -495,6 +500,7 @@ void rampSpeed(int target) {
             stationTick = millis();
           }
           updateStationLights();
+          readEncoderStep();
           draw();
         }
 
@@ -530,12 +536,6 @@ void rampSpeed(int target) {
     // ---- OUTPUT ----
     globalCurrentSpeed = current;
 
-    if (isMPH) {
-      snprintf(line2, sizeof(line2), "%d MPH", speedToMph(current));
-    } else {
-      snprintf(line2, sizeof(line2), "%d KPH", speedToKph(current));
-    }
-
     if (target == 0) {
       updateTafficSignal(current, rampUp);
     } else {
@@ -559,6 +559,11 @@ void rampSpeed(int target) {
     }
 
     writeMotor(lastDirection, current);
+    if (isMPH) {
+      snprintf(line2, sizeof(line2), "%d MPH", speedToMph(current));
+    } else {
+      snprintf(line2, sizeof(line2), "%d KPH", speedToKph(current));
+    }
     draw();
     updateStationLights();
     readEncoderStep();
@@ -1015,7 +1020,7 @@ void loop() {
   if (abortRoute) {
     abortRoute = false;
     manualControlLoop();
-    return;  // ← ADD THIS
+    return;
   }
 
   if (restartRequested) {
