@@ -131,14 +131,18 @@ void readEncoderStep() {
       lastPos = pos;
       lastManualInput = millis();
       Serial.println("Knob turned");
-      if (pos > lastPos) globalCurrentSpeed -= 5;
-      else globalCurrentSpeed += 5;
+      if (pos > lastPos) globalCurrentSpeed -= 15;
+      else globalCurrentSpeed += 15;
 
       globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
-
       writeMotor(lastDirection, globalCurrentSpeed);
 
       snprintf(line3, sizeof(line3), "MANUAL MODE");
+      if (isMPH) {
+        snprintf(line2, sizeof(line2), "%d MPH", speedToMph(globalCurrentSpeed));
+      } else {
+        snprintf(line2, sizeof(line2), "%d KPH", speedToKph(globalCurrentSpeed));
+      }
       draw();
     }
     if (mode == MANUAL && millis() - lastManualInput > 5000) {
