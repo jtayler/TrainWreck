@@ -70,7 +70,7 @@ long stationOverlapOffset = 800;
 
 // ------- station ---------
 bool sensorEnabled = true;
-bool calibrateAtStartup = true;
+bool calibrateAtStartup = false;
 bool hasCalibrated = false;
 bool stationArmed = false;
 unsigned long stationTick = 0;
@@ -119,19 +119,31 @@ ControlMode mode = AUTO;
 unsigned long lastManualInput = 0;
 
 void readEncoderStep() {
-  if (calibrateAtStartup && !hasCalibrated) return;
-  mode = MANUAL;
-  lastManualInput = millis();
-
   long pos = speedKnob.read() / 4;
+
   if (pos != lastPos) {
-    if (pos > lastPos) targetSpeed -= 15;
-    else targetSpeed += 15;
-    targetSpeed = constrain(targetSpeed, 0, 255);
-    targetDirty = true;
-    lastPos = pos;
-    Serial.println("Target speed");
-    Serial.println(targetSpeed);
+    Serial.println("Enter manual mode");
+    mode = MANUAL;
+  }
+  while (mode == MANUAL) {
+    long pos = speedKnob.read() / 4;
+    if (lastPos != pos) {
+      lastPos = pos;
+      lastManualInput = millis();
+      Serial.println("Knob turned");
+      if (pos > lastPos) globalCurrentSpeed -= 5;
+      else globalCurrentSpeed += 5;
+
+      globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
+
+      writeMotor(lastDirection, globalCurrentSpeed);
+
+      snprintf(line3, sizeof(line3), "MANUAL MODE");
+      draw();
+    }
+    if (mode == MANUAL && millis() - lastManualInput > 5000) {
+      mode = AUTO;
+    }
   }
 
   static unsigned long lastPress = 0;
@@ -515,7 +527,7 @@ void rampSpeed(int target) {
 // -------- calibrate --------
 // Calibration function
 void calibrateTrain() {
-  rampSpeed(0);
+  // rampSpeed(0);
   // snprintf(line1, sizeof(line1), "CALIBRATE RAMP");
   // unsigned long rampTestStartTime = millis();
   // rampSpeed(MAX_SPEED);
@@ -555,7 +567,7 @@ void loadFromEEPROM() {
     revLoopMs = p.revLoopMs;
   } else {
     // No saved data, run calibration
-    calibrateTrain();
+    // calibrateTrain();
   }
 }
 
@@ -784,6 +796,13 @@ void setup() {
   u8g2.clearBuffer();
   Serial.println("Display Driver Initialized.");
 
+  if (!hasCalibrated && calibrateAtStartup && sensorEnabled) {
+    // snprintf(line1, sizeof(line1), "CALIBRATING");
+    calibrateTrain();
+    hasCalibrated = true;
+    Serial.println("Train Calibration Complete.");
+  }
+
   Serial.println("BOOT");
 }
 
@@ -887,14 +906,6 @@ void draw() {
 // -------- loop --------
 
 void runRoutes() {
-  if (!hasCalibrated && calibrateAtStartup && sensorEnabled) {
-    // snprintf(line1, sizeof(line1), "CALIBRATING");
-    calibrateTrain();
-    hasCalibrated = true;
-    Serial.println("Train Calibration Complete.");
-  }
-
-
   for (uint8_t i = 0; i < ROUTE_COUNT; i++) {
     runRoute(USER_ROUTES[i]);
   }
