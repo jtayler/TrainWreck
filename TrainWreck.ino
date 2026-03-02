@@ -41,7 +41,6 @@ const int in2Pin = 6;
 const int CLK_PIN = 2;  // INT0
 const int DT_PIN = 3;   // INT1
 const int buttonPin = 12;
-Encoder speedKnob(CLK_PIN, DT_PIN);
 long lastPos = 0;
 
 // const int RED_PIN = 2;
@@ -71,7 +70,7 @@ long stationOverlapOffset = 800;
 
 // ------- station ---------
 bool sensorEnabled = true;
-bool calibrateAtStartup = false;
+bool calibrateAtStartup = true;
 bool hasCalibrated = false;
 bool stationArmed = false;
 unsigned long stationTick = 0;
@@ -110,6 +109,8 @@ int speedToKph(int pwm) {
   return (pwm * MAX_MPH * 161) / (MAX_SPEED * 100);
 }
 
+Encoder speedKnob(CLK_PIN, DT_PIN);
+
 volatile int targetSpeed = 0;
 volatile bool targetDirty = false;
 enum ControlMode { AUTO,
@@ -118,6 +119,7 @@ ControlMode mode = AUTO;
 unsigned long lastManualInput = 0;
 
 void readEncoderStep() {
+  if (calibrateAtStartup && !hasCalibrated) return;
   mode = MANUAL;
   lastManualInput = millis();
 
@@ -521,8 +523,6 @@ void calibrateTrain() {
   // Serial.print("rampTime: ");
   // Serial.println(rampTime);
   // delay(1000);
-  snprintf(line1, sizeof(line1), "CALIBRATE STATION");
-
   unsigned long lapFwd = 0;  //measureLap(true);
   //delay(1000);
   unsigned long lapRev = measureLap(false);
@@ -887,6 +887,14 @@ void draw() {
 // -------- loop --------
 
 void runRoutes() {
+  if (!hasCalibrated && calibrateAtStartup && sensorEnabled) {
+    // snprintf(line1, sizeof(line1), "CALIBRATING");
+    calibrateTrain();
+    hasCalibrated = true;
+    Serial.println("Train Calibration Complete.");
+  }
+
+
   for (uint8_t i = 0; i < ROUTE_COUNT; i++) {
     runRoute(USER_ROUTES[i]);
   }
@@ -943,12 +951,5 @@ void runRoute(uint8_t index) {
 }
 
 void loop() {
-  if (!hasCalibrated && calibrateAtStartup && sensorEnabled) {
-    snprintf(line1, sizeof(line1), "CALIBRATING");
-    calibrateTrain();
-    hasCalibrated = true;
-    Serial.println("Train Calibration Complete.");
-  }
-
   runRoutes();
 }
