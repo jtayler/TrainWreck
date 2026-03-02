@@ -38,8 +38,11 @@ const int in2Pin = 6;
 //const int in1Pin = 7;
 //const int in2Pin = A2;
 
-Encoder speedKnob(2, 3);
+const int CLK_PIN = 2;  // INT0
+const int DT_PIN = 3;   // INT1
 const int buttonPin = 12;
+Encoder speedKnob(CLK_PIN, DT_PIN);
+long lastPos = 0;
 
 // const int RED_PIN = 2;
 // const int YEL_PIN = 3;
@@ -68,7 +71,8 @@ long stationOverlapOffset = 800;
 
 // ------- station ---------
 bool sensorEnabled = true;
-bool calibrateAtStartup = true;
+bool calibrateAtStartup = false;
+bool hasCalibrated = false;
 bool stationArmed = false;
 unsigned long stationTick = 0;
 
@@ -106,6 +110,37 @@ int speedToKph(int pwm) {
   return (pwm * MAX_MPH * 161) / (MAX_SPEED * 100);
 }
 
+volatile int targetSpeed = 0;
+volatile bool targetDirty = false;
+enum ControlMode { AUTO,
+                   MANUAL };
+ControlMode mode = AUTO;
+unsigned long lastManualInput = 0;
+
+void readEncoderStep() {
+  mode = MANUAL;
+  lastManualInput = millis();
+
+  long pos = speedKnob.read() / 4;
+  if (pos != lastPos) {
+    if (pos > lastPos) targetSpeed -= 15;
+    else targetSpeed += 15;
+    targetSpeed = constrain(targetSpeed, 0, 255);
+    targetDirty = true;
+    lastPos = pos;
+    Serial.println("Target speed");
+    Serial.println(targetSpeed);
+  }
+
+  static unsigned long lastPress = 0;
+  if (digitalRead(buttonPin) == LOW) {
+    if (millis() - lastPress > 200) {
+      Serial.println("Button pressed");
+      lastPress = millis();
+    }
+  }
+}
+
 // -------- go! --------
 bool currentDirection = true;
 
@@ -127,7 +162,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       while (millis() - legStartTime < segment) {
         draw();
         updateStationLights();
-        //readEncoderStep();
+        readEncoderStep();
       }
       rampSpeed(DIP_SPEED);
       Serial.print("🟡 SLOW LEG ⏱ ");
@@ -138,7 +173,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       while (millis() - dipStartTime < DIP_TIME) {
         draw();
         updateStationLights();
-        //readEncoderStep();
+        readEncoderStep();
       }
       rampSpeed(random(speed * 0.85, speed));
     }
@@ -150,7 +185,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     while (millis() - segmentStartTime < segment) {
       draw();
       updateStationLights();
-      //readEncoderStep();
+      readEncoderStep();
     }
   } else {
     Serial.print("🟢 ONLY LEG ⏱ ");
@@ -161,7 +196,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     while (millis() - onlyStartTime < runTime * 1000) {
       draw();
       updateStationLights();
-      // readEncoderStep();
+      readEncoderStep();
     }
   }
   Serial.print("🛑 STOP ⏱ ");
@@ -169,7 +204,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   Serial.println("s");
   snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
   draw();
-  // readEncoderStep();
+  readEncoderStep();
 
   rampSpeed(0);
   stateStartTime = millis();
@@ -178,7 +213,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   while (millis() - stateStartTime < pauseMs) {
     draw();
     updateStationLights();
-    // readEncoderStep();
+    readEncoderStep();
   }
 
   setStationState(DEPARTING);
@@ -188,7 +223,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   while (millis() - start < 4000) {
     updateStationLights();
     draw();
-    // readEncoderStep();
+    readEncoderStep();
   }
 }
 
@@ -227,8 +262,8 @@ void updateTafficSignal(int speed, bool rampUp) {
 
 const unsigned long ARRIVE_BLINK_MS = 3000;
 const unsigned long DEPART_BLINK_MS = 4000;
-const unsigned long HOLD_AFTER_LEAVE = 4000;
-const unsigned long FADE_MS = 5000;
+const unsigned long HOLD_AFTER_LEAVE = 3000;
+const unsigned long FADE_MS = 4000;
 
 void allOn() {
   //Serial.print("ALL ON! ");
@@ -413,7 +448,7 @@ void rampSpeed(int target) {
         while (millis() - startWait < waitMs) {
           updateStationLights();
           draw();
-          // readEncoderStep();
+          readEncoderStep();
         }
 
         setStationState(AT_STATION);
@@ -457,10 +492,19 @@ void rampSpeed(int target) {
                  speedToKph(target));
       }
     }
+
+    if (targetDirty) {
+      targetDirty = false;
+      target = targetSpeed;  // adopt new target
+      start = current;       // restart ramp from current
+      delta = abs(target - start);
+      rampUp = target > current;
+    }
+
     writeMotor(lastDirection, current);
     draw();
     updateStationLights();
-    //readEncoderStep();
+    readEncoderStep();
   }
 
   updateTafficSignal(current, rampUp);
@@ -479,7 +523,7 @@ void calibrateTrain() {
   // delay(1000);
   snprintf(line1, sizeof(line1), "CALIBRATE STATION");
 
-  unsigned long lapFwd = 0; //measureLap(true);
+  unsigned long lapFwd = 0;  //measureLap(true);
   //delay(1000);
   unsigned long lapRev = measureLap(false);
 
@@ -524,7 +568,7 @@ unsigned long calculateStationPause(bool forward) {
 }
 // Function to measure lap time
 unsigned long measureLap(bool forward) {
-
+  int read = 0;
   Serial.println("---- CALIBRATION ----");
   Serial.println(forward ? "FWD" : "REV");
 
@@ -540,22 +584,26 @@ unsigned long measureLap(bool forward) {
 
   // wait for transition HIGH -> LOW
   while (true) {
-    bool state = analogRead(IR_PIN) < IR_THRESHOLD;
+    read = analogRead(IR_PIN);
+    // Serial.println(read);
+    bool state = read < IR_THRESHOLD;
     if (!lastState && state) break;
     lastState = state;
   }
 
   Serial.println("First edge.");
+  Serial.println(read);
 
   // wait for rising edge (clear)
   while (true) {
-    bool state = analogRead(IR_PIN) < IR_THRESHOLD;
+    read = analogRead(IR_PIN);
+    bool state = read < IR_THRESHOLD;
     if (lastState && !state) break;
     lastState = state;
   }
 
   Serial.println("Clear.");
-  Serial.println(lastState);
+  Serial.println(read);
 
   delay(1000);
 
@@ -563,7 +611,8 @@ unsigned long measureLap(bool forward) {
   Serial.println("Timing...");
 
   while (true) {
-    bool state = analogRead(IR_PIN) < IR_THRESHOLD;
+    read = analogRead(IR_PIN);
+    bool state = read < IR_THRESHOLD;
     if (!lastState && state) break;
     lastState = state;
   }
@@ -572,11 +621,13 @@ unsigned long measureLap(bool forward) {
 
   Serial.println();
   Serial.println("SECOND block detected.");
-  Serial.print("Lap measured: ");
+  Serial.println(read);
+  Serial.print("Lap time: ");
   Serial.println(lap);
 
   rampSpeed(0);  // Stop the motor after measuring
   Serial.println("---- CALIBRATION END ----");
+  delay(1000);
 
   return lap;
 }
@@ -709,24 +760,14 @@ void setup() {
   digitalWrite(in2Pin, LOW);
   Serial.println("Motor Controller Pin Modes Set");
 
-  u8g2.begin();
-  u8g2.clearBuffer();
-  Serial.println("Display Driver Initialized.");
+  pinMode(buttonPin, INPUT_PULLUP);
+  Serial.println("Control Knob Setup.");
 
   pinMode(IR_PIN, INPUT);
   Serial.println("IR Sensor Connected.");
 
   loadFromEEPROM();
   Serial.println("EPROM Loaded.");
-
-  if (calibrateAtStartup && sensorEnabled) {
-    snprintf(line1, sizeof(line1), "CALIBRATING");
-    draw();
-    calibrateTrain();
-    Serial.println("Train Calibration Complete.");
-  }
-
-  Serial.println("Control Knob Setup.");
 
   pinMode(STN1_PIN, OUTPUT);
   pinMode(STN2_PIN, OUTPUT);
@@ -738,6 +779,10 @@ void setup() {
   pinMode(YEL_PIN, OUTPUT);
   pinMode(GRN_PIN, OUTPUT);
   Serial.println("Traffic Lights Setup.");
+
+  u8g2.begin();
+  u8g2.clearBuffer();
+  Serial.println("Display Driver Initialized.");
 
   Serial.println("BOOT");
 }
@@ -868,8 +913,8 @@ void runRoute(uint8_t index) {
   uint16_t baseSpeed;
   switch (currentRoute.equipment) {
     case BULLET: baseSpeed = MAX_SPEED; break;
-    case SHUTTLE: baseSpeed = MAX_SPEED * 0.95; break;
-    case FREIGHT: baseSpeed = MAX_SPEED * 0.90; break;
+    case SHUTTLE: baseSpeed = MAX_SPEED * 0.98; break;
+    case FREIGHT: baseSpeed = MAX_SPEED * 0.95; break;
   }
 
   // -------- Range → duration --------
@@ -877,7 +922,7 @@ void runRoute(uint8_t index) {
   switch (currentRoute.range) {
     case LOCAL: runTime = random(6, 12); break;
     case SHORT_RUN: runTime = random(12, 20); break;
-    case LONG_HAUL: runTime = random(20, 40); break;
+    case LONG_HAUL: runTime = random(20, 30); break;
   }
 
   // -------- Service → dips --------
@@ -885,7 +930,7 @@ void runRoute(uint8_t index) {
   switch (currentRoute.service) {
     case NONSTOP: dips = 0; break;
     case LIMITED: dips = random(1, 3); break;
-    case UNPREDICTABLE: dips = random(0, 5); break;
+    case UNPREDICTABLE: dips = random(0, 4); break;
   }
 
   // -------- Execute --------
@@ -898,5 +943,12 @@ void runRoute(uint8_t index) {
 }
 
 void loop() {
+  if (!hasCalibrated && calibrateAtStartup && sensorEnabled) {
+    snprintf(line1, sizeof(line1), "CALIBRATING");
+    calibrateTrain();
+    hasCalibrated = true;
+    Serial.println("Train Calibration Complete.");
+  }
+
   runRoutes();
 }
