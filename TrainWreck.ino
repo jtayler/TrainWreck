@@ -84,6 +84,10 @@ const unsigned long DIP_TIME = 3600;         // ms per dip
 bool isMPH = true;
 bool lastDirection = true;
 int globalCurrentSpeed = 0;
+volatile bool abortRoute = false;
+volatile bool restartRequested = false;
+uint8_t currentRouteIndex = 0;
+
 char line1[64] = "STATUS";
 char line2[64] = "0";
 char line3[64] = "READY";
@@ -121,33 +125,12 @@ unsigned long lastManualInput = 0;
 void readEncoderStep() {
   long pos = speedKnob.read() / 4;
   if (pos != lastPos) {
+    lastPos = pos;
+    lastManualInput = millis();
     mode = MANUAL;
+    abortRoute = true;
   }
-  while (mode == MANUAL) {
-    if (pos != lastPos) {
-      long oldPos = lastPos;
-      lastPos = pos;
 
-      lastManualInput = millis();
-      Serial.println("Knob turned");
-
-      if (pos < oldPos) globalCurrentSpeed += 15;
-      else globalCurrentSpeed -= 15;
-
-      globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
-      writeMotor(lastDirection, globalCurrentSpeed);
-      snprintf(line3, sizeof(line3), "MANUAL MODE");
-      if (isMPH)
-        snprintf(line2, sizeof(line2), "%d MPH", speedToMph(globalCurrentSpeed));
-      else
-        snprintf(line2, sizeof(line2), "%d KPH", speedToKph(globalCurrentSpeed));
-      draw();
-    }
-    pos = speedKnob.read() / 4;
-    if (millis() - lastManualInput > 5000) {
-      mode = AUTO;
-    }
-  }
   static unsigned long lastPress = 0;
   if (digitalRead(buttonPin) == LOW) {
     if (millis() - lastPress > 200) {
@@ -156,6 +139,48 @@ void readEncoderStep() {
     }
   }
 }
+
+void manualControlLoop() {
+  Serial.println("ENTER MANUAL");
+
+  while (true) {
+    long pos = speedKnob.read() / 4;
+
+    if (pos != lastPos) {
+      long oldPos = lastPos;
+      lastPos = pos;
+      lastManualInput = millis();
+
+      if (pos < oldPos) globalCurrentSpeed += 15;
+      else globalCurrentSpeed -= 15;
+
+      globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
+      writeMotor(lastDirection, globalCurrentSpeed);
+
+      if (globalCurrentSpeed == 0) {
+        lastDirection = !lastDirection;
+      }
+      snprintf(line3, sizeof(line3), "MANUAL MODE");
+      if (isMPH)
+        snprintf(line2, sizeof(line2), "%d MPH", speedToMph(globalCurrentSpeed));
+      else
+        snprintf(line2, sizeof(line2), "%d KPH", speedToKph(globalCurrentSpeed));
+
+      draw();
+    }
+
+    if (millis() - lastManualInput > 5000) {
+      Serial.println("EXIT MANUAL");
+      break;
+    }
+  }
+
+  mode = AUTO;
+  restartRequested = true;
+  abortRoute = false;    // clear any leftover abort
+  stationArmed = false;  // reset docking state
+}
+
 
 // -------- go! --------
 bool currentDirection = true;
@@ -176,6 +201,8 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
       unsigned long legStartTime = millis();
       while (millis() - legStartTime < segment) {
+        if (abortRoute) return;
+
         draw();
         updateStationLights();
         readEncoderStep();
@@ -187,6 +214,8 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       snprintf(line3, sizeof(line3), "%s %ds", "SLOW LEG", DIP_TIME / 1000);
       unsigned long dipStartTime = millis();
       while (millis() - dipStartTime < DIP_TIME) {
+        if (abortRoute) return;
+
         draw();
         updateStationLights();
         readEncoderStep();
@@ -199,6 +228,8 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
     unsigned long segmentStartTime = millis();
     while (millis() - segmentStartTime < segment) {
+      if (abortRoute) return;
+
       draw();
       updateStationLights();
       readEncoderStep();
@@ -210,6 +241,8 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     snprintf(line3, sizeof(line3), "%s %ds", "ONLY LEG", runTime);
     unsigned long onlyStartTime = millis();
     while (millis() - onlyStartTime < runTime * 1000) {
+      if (abortRoute) return;
+
       draw();
       updateStationLights();
       readEncoderStep();
@@ -227,6 +260,8 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   snprintf(line3, sizeof(line3), "%s %ds", "AT STATION", pauseTime);
   unsigned long pauseMs = pauseTime * 1000;
   while (millis() - stateStartTime < pauseMs) {
+    if (abortRoute) return;
+
     draw();
     updateStationLights();
     readEncoderStep();
@@ -237,6 +272,8 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   snprintf(line3, sizeof(line3), "%s", "NOW BOARDING");
   unsigned long start = millis();
   while (millis() - start < 4000) {
+    if (abortRoute) return;
+
     updateStationLights();
     draw();
     readEncoderStep();
@@ -418,6 +455,8 @@ void setDirection(bool forward) {
 // -------- ramp --------
 void rampSpeed(int target) {
   static int current = 0;
+  if (current != globalCurrentSpeed) current = globalCurrentSpeed;
+
   static bool lastSensorState = false;
   static bool dockedThisStop = false;
   int start = current;
@@ -436,7 +475,7 @@ void rampSpeed(int target) {
   updateTafficSignal((rampUp ? 1 : current), rampUp);
 
   while (current != target) {
-
+    if (abortRoute) return;
     // Start blinking as soon as we enter docking range
     if (target == 0 && current < (DOCKING_SPEED - 10)) {
       setStationState(ARRIVING);
@@ -449,6 +488,7 @@ void rampSpeed(int target) {
         Serial.println("WAITING FOR STATION EDGE");
 
         while (!stationArmed) {
+          if (abortRoute) return;
           int v = analogRead(IR_PIN);
           if (v < IR_THRESHOLD) {
             stationArmed = true;
@@ -462,6 +502,7 @@ void rampSpeed(int target) {
 
         unsigned long startWait = millis();
         while (millis() - startWait < waitMs) {
+          if (abortRoute) return;
           updateStationLights();
           draw();
           readEncoderStep();
@@ -598,6 +639,9 @@ unsigned long measureLap(bool forward) {
 
   // wait for transition HIGH -> LOW
   while (true) {
+    if (abortRoute) return;
+    readEncoderStep();
+
     read = analogRead(IR_PIN);
     // Serial.println(read);
     bool state = read < IR_THRESHOLD;
@@ -804,6 +848,7 @@ void setup() {
     hasCalibrated = true;
     Serial.println("Train Calibration Complete.");
   }
+  lastPos = speedKnob.read() / 4;
 
   Serial.println("BOOT");
 }
@@ -909,6 +954,7 @@ void draw() {
 
 void runRoutes() {
   for (uint8_t i = 0; i < ROUTE_COUNT; i++) {
+    if (abortRoute) return;
     runRoute(USER_ROUTES[i]);
   }
 }
@@ -921,6 +967,7 @@ void showTitleByTitleId(uint8_t titleId) {
 
 void runRoute(uint8_t index) {
   memcpy_P(&currentRoute, &ROUTE_DEFAULTS[index], sizeof(RouteProfile));
+  currentRouteIndex = index;
   showTitleByTitleId(currentRoute.titleId);
   // -------- Schedule → legs --------
   uint8_t legs;
@@ -956,7 +1003,7 @@ void runRoute(uint8_t index) {
 
   // -------- Execute --------
   for (uint8_t i = 0; i < legs; i++) {
-    // Add slight realism variation (±5%)
+    if (abortRoute) return;
     baseSpeed = baseSpeed * random(95, 105) / 100;
     go(currentDirection, baseSpeed, runTime, dips);
     currentDirection = !currentDirection;
@@ -964,5 +1011,19 @@ void runRoute(uint8_t index) {
 }
 
 void loop() {
+
+  if (abortRoute) {
+    abortRoute = false;
+    manualControlLoop();
+    return;  // ← ADD THIS
+  }
+
+  if (restartRequested) {
+    restartRequested = false;
+    rampSpeed(0);
+    runRoute(currentRouteIndex);
+    return;
+  }
+
   runRoutes();
 }
