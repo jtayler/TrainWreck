@@ -2,6 +2,7 @@
 #include <EEPROM.h>
 #include <U8g2lib.h>
 #include <avr/pgmspace.h>
+#include <Encoder.h>
 
 // --- pins ---
 
@@ -9,9 +10,9 @@
 #define DC_PIN 9
 #define RST_PIN 8
 
-#define ENC_CLK 7
-#define ENC_DT A5
-#define ENC_SW 12
+// #define ENC_CLK 7
+// #define ENC_DT A5
+// #define ENC_SW 12
 
 // --- persistence store ---
 
@@ -21,8 +22,8 @@ struct Persist {
   byte version;
   unsigned long fwdLoopMs;
   unsigned long revLoopMs;
-  long fwdOffsetMs;
-  long revOffsetMs;
+  long stationPositionOffset;
+  long stationCenterOffset;
 };
 
 // --- display driver ---
@@ -37,8 +38,13 @@ const int in2Pin = 6;
 //const int in1Pin = 7;
 //const int in2Pin = A2;
 
-const int RED_PIN = 2;
-const int YEL_PIN = 3;
+Encoder speedKnob(2, 3);
+const int buttonPin = 12;
+
+// const int RED_PIN = 2;
+// const int YEL_PIN = 3;
+const int RED_PIN = 7;
+const int YEL_PIN = A5;
 const int GRN_PIN = 4;
 
 const int STN1_PIN = A1;
@@ -56,9 +62,9 @@ const int DOCKING_SPEED = 165;
 unsigned long fwdLoopMs = 0;
 unsigned long revLoopMs = 0;
 
-long fwdOffsetMs = 0;
-long revOffsetMs = 0;
-long revAdjustMs = 800;
+long stationPositionOffset = 0;
+long stationCenterOffset = 0;
+long stationOverlapOffset = 800;
 
 // ------- station ---------
 bool sensorEnabled = true;
@@ -121,7 +127,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       while (millis() - legStartTime < segment) {
         draw();
         updateStationLights();
-        readEncoderStep();
+        //readEncoderStep();
       }
       rampSpeed(DIP_SPEED);
       Serial.print("🟡 SLOW LEG ⏱ ");
@@ -132,7 +138,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       while (millis() - dipStartTime < DIP_TIME) {
         draw();
         updateStationLights();
-        readEncoderStep();
+        //readEncoderStep();
       }
       rampSpeed(random(speed * 0.85, speed));
     }
@@ -144,7 +150,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     while (millis() - segmentStartTime < segment) {
       draw();
       updateStationLights();
-      readEncoderStep();
+      //readEncoderStep();
     }
   } else {
     Serial.print("🟢 ONLY LEG ⏱ ");
@@ -155,7 +161,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     while (millis() - onlyStartTime < runTime * 1000) {
       draw();
       updateStationLights();
-      readEncoderStep();
+      // readEncoderStep();
     }
   }
   Serial.print("🛑 STOP ⏱ ");
@@ -163,7 +169,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   Serial.println("s");
   snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
   draw();
-  readEncoderStep();
+  // readEncoderStep();
 
   rampSpeed(0);
   stateStartTime = millis();
@@ -172,7 +178,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   while (millis() - stateStartTime < pauseMs) {
     draw();
     updateStationLights();
-    readEncoderStep();
+    // readEncoderStep();
   }
 
   setStationState(DEPARTING);
@@ -182,7 +188,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   while (millis() - start < 4000) {
     updateStationLights();
     draw();
-    readEncoderStep();
+    // readEncoderStep();
   }
 }
 
@@ -407,7 +413,7 @@ void rampSpeed(int target) {
         while (millis() - startWait < waitMs) {
           updateStationLights();
           draw();
-          readEncoderStep();
+          // readEncoderStep();
         }
 
         setStationState(AT_STATION);
@@ -454,7 +460,7 @@ void rampSpeed(int target) {
     writeMotor(lastDirection, current);
     draw();
     updateStationLights();
-    readEncoderStep();
+    //readEncoderStep();
   }
 
   updateTafficSignal(current, rampUp);
@@ -511,9 +517,9 @@ void loadFromEEPROM() {
 
 unsigned long calculateStationPause(bool forward) {
   if (forward) {
-    return fwdOffsetMs;
+    return stationPositionOffset - stationCenterOffset;
   } else {
-    return ((revLoopMs * 0.5) + revOffsetMs + revAdjustMs);
+    return ((revLoopMs * 0.5) + stationCenterOffset + stationOverlapOffset);
   }
 }
 // Function to measure lap time
@@ -549,6 +555,7 @@ unsigned long measureLap(bool forward) {
   }
 
   Serial.println("Clear.");
+  Serial.println(lastState);
 
   delay(1000);
 
@@ -574,36 +581,14 @@ unsigned long measureLap(bool forward) {
   return lap;
 }
 
-// Respond to knob turn and press.
-
-void readEncoderStep() {
-  static int lastCLK = HIGH;
-
-  int clk = digitalRead(ENC_CLK);
-
-  if (clk != lastCLK && clk == LOW) {
-    if (digitalRead(ENC_DT) != clk) {
-      Serial.println("CW");
-    } else {
-      Serial.println("CCW");
-    }
-  }
-
-  lastCLK = clk;
-
-  if (digitalRead(ENC_SW) == LOW) {
-    Serial.println("BUTTON");
-  }
-}
-
 // Save calibration values to EEPROM
 void saveToEEPROM() {
   Persist p;
   p.version = EEPROM_VERSION;
   p.fwdLoopMs = fwdLoopMs;
   p.revLoopMs = revLoopMs;
-  p.fwdOffsetMs = fwdOffsetMs;
-  p.revOffsetMs = revOffsetMs;
+  p.stationPositionOffset = stationPositionOffset;
+  p.stationCenterOffset = stationCenterOffset;
 
   EEPROM.put(0, p);  // Write the calibration data to EEPROM
 }
@@ -699,7 +684,7 @@ const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
   { 23, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL }      // Thomas & Friends
 };
 
-const int USER_ROUTES[] = { 12, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 };
+const int USER_ROUTES[] = { 15, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 };
 const int ROUTE_COUNT = sizeof(USER_ROUTES) / sizeof(USER_ROUTES[0]);
 
 struct OperatingState {
@@ -741,9 +726,6 @@ void setup() {
     Serial.println("Train Calibration Complete.");
   }
 
-  pinMode(ENC_CLK, INPUT_PULLUP);
-  pinMode(ENC_DT, INPUT_PULLUP);
-  pinMode(ENC_SW, INPUT_PULLUP);
   Serial.println("Control Knob Setup.");
 
   pinMode(STN1_PIN, OUTPUT);
