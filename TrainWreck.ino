@@ -120,36 +120,34 @@ unsigned long lastManualInput = 0;
 
 void readEncoderStep() {
   long pos = speedKnob.read() / 4;
-
   if (pos != lastPos) {
-    Serial.println("Enter manual mode");
     mode = MANUAL;
   }
   while (mode == MANUAL) {
-    long pos = speedKnob.read() / 4;
-    if (lastPos != pos) {
+    if (pos != lastPos) {
+      long oldPos = lastPos;
       lastPos = pos;
+
       lastManualInput = millis();
       Serial.println("Knob turned");
-      if (pos > lastPos) globalCurrentSpeed -= 15;
-      else globalCurrentSpeed += 15;
+
+      if (pos < oldPos) globalCurrentSpeed += 15;
+      else globalCurrentSpeed -= 15;
 
       globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
       writeMotor(lastDirection, globalCurrentSpeed);
-
       snprintf(line3, sizeof(line3), "MANUAL MODE");
-      if (isMPH) {
+      if (isMPH)
         snprintf(line2, sizeof(line2), "%d MPH", speedToMph(globalCurrentSpeed));
-      } else {
+      else
         snprintf(line2, sizeof(line2), "%d KPH", speedToKph(globalCurrentSpeed));
-      }
       draw();
     }
-    if (mode == MANUAL && millis() - lastManualInput > 5000) {
+    pos = speedKnob.read() / 4;
+    if (millis() - lastManualInput > 5000) {
       mode = AUTO;
     }
   }
-
   static unsigned long lastPress = 0;
   if (digitalRead(buttonPin) == LOW) {
     if (millis() - lastPress > 200) {
