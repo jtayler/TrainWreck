@@ -66,11 +66,12 @@ unsigned long revLoopMs = 0;
 
 long stationPositionOffset = 0;
 long stationCenterOffset = 0;
-long stationOverlapOffset = 800;
+long stationOverlapOffset = 300;
 
 // ------- station ---------
 bool sensorEnabled = true;
-bool calibrateAtStartup = false;
+bool calibrateAtStartup = true;
+volatile bool calibrating = false;
 bool hasCalibrated = false;
 bool stationArmed = false;
 unsigned long stationTick = 0;
@@ -102,6 +103,7 @@ enum StationState {
 
 StationState currentStationState = IDLE;
 unsigned long stateStartTime = 0;
+bool manualLocked = false;
 
 int speedToMph(int pwm) {
   pwm = constrain(pwm, 0, MAX_SPEED);
@@ -124,19 +126,49 @@ unsigned long lastManualInput = 0;
 
 void readEncoderStep() {
   long pos = speedKnob.read() / 4;
+
+  // --- KNOB ENTERS MANUAL IF AUTO ---
   if (pos != lastPos) {
-    lastPos = pos;
     lastManualInput = millis();
-    mode = MANUAL;
-    abortRoute = true;
+
+    if (mode == AUTO) {
+      mode = MANUAL;
+      restartRequested = true;
+      abortRoute = true;
+      stationArmed = false;
+      Serial.println("ENTER MANUAL (knob)");
+    }
+
+    lastPos = pos;
   }
 
+  // --- BUTTON TOGGLES LOCK ---
   static unsigned long lastPress = 0;
+
   if (digitalRead(buttonPin) == LOW) {
-    if (millis() - lastPress > 200) {
-      Serial.println("Button pressed");
+    if (millis() - lastPress > 250) {
       lastPress = millis();
+
+      // If in manual, toggle lock state
+      if (mode == MANUAL) {
+        if (manualLocked) {
+          manualLocked = false;  // Unlock manual mode
+          Serial.println("MANUAL LOCK OFF");
+        } else {
+          manualLocked = true;  // Lock manual mode
+          Serial.println("MANUAL LOCK ON");
+        }
+      }
     }
+  }
+
+  // --- AUTO RETURN IF NO BUTTON PRESS AFTER TIMEOUT ---
+  if (mode == MANUAL && !manualLocked && millis() - lastManualInput > 10000) {
+    Serial.println("BUTTON RETURN");
+    mode = AUTO;  // Reset to auto mode after 5 seconds
+    restartRequested = true;
+    abortRoute = false;
+    stationArmed = false;
   }
 }
 
@@ -144,46 +176,56 @@ void manualControlLoop() {
   Serial.println("ENTER MANUAL");
 
   while (true) {
+    if (!manualLocked && millis() - lastManualInput > 10000) {
+      Serial.println("AUTO RETURN");
+      break;
+    }
     long pos = speedKnob.read() / 4;
 
     if (pos != lastPos) {
       long oldPos = lastPos;
       lastPos = pos;
-      lastManualInput = millis();
 
       if (pos < oldPos) {
-        globalCurrentSpeed += 15;
         signalGreen();
+        globalCurrentSpeed += 15;
       } else {
-        globalCurrentSpeed -= 15;
         signalYellow();
+        globalCurrentSpeed -= 15;
       }
+
       globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
       if (globalCurrentSpeed == 0) {
-        signalRed();
         lastDirection = !lastDirection;
+        signalRed();
       }
       writeMotor(lastDirection, globalCurrentSpeed);
-      snprintf(line3, sizeof(line3), "MANUAL MODE");
+
+      snprintf(line3, sizeof(line3), "MANUAL CONTROL");
       if (isMPH)
         snprintf(line2, sizeof(line2), "%d MPH", speedToMph(globalCurrentSpeed));
       else
         snprintf(line2, sizeof(line2), "%d KPH", speedToKph(globalCurrentSpeed));
+
       draw();
     }
 
-    if (millis() - lastManualInput > 6000) {
-      Serial.println("EXIT MANUAL");
-      break;
+    static unsigned long lastPress = 0;
+    if (digitalRead(buttonPin) == LOW) {
+      if (millis() - lastPress > 250) {
+        lastPress = millis();
+        snprintf(line3, sizeof(line3), "EXIT MANUAL");
+        Serial.println("EXIT MANUAL");
+        break;
+      }
     }
   }
 
   mode = AUTO;
   restartRequested = true;
-  abortRoute = false;    // clear any leftover abort
-  stationArmed = false;  // reset docking state
+  abortRoute = false;
+  stationArmed = false;
 }
-
 
 // -------- go! --------
 bool currentDirection = true;
@@ -261,23 +303,19 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
 
   rampSpeed(0);
   stateStartTime = millis();
-  snprintf(line3, sizeof(line3), "%s %ds", "AT STATION", pauseTime);
   unsigned long pauseMs = pauseTime * 1000;
   while (millis() - stateStartTime < pauseMs) {
     if (abortRoute) return;
-
-    snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
+    snprintf(line3, sizeof(line3), "%s %ds", "AT STATION", pauseTime);
     draw();
     updateStationLights();
     readEncoderStep();
   }
-
   setStationState(DEPARTING);
   updateStationLights();
   unsigned long start = millis();
   while (millis() - start < 4000) {
     if (abortRoute) return;
-
     updateStationLights();
     snprintf(line3, sizeof(line3), "%s", "NOW BOARDING");
     draw();
@@ -459,6 +497,11 @@ void setDirection(bool forward) {
 
 // -------- ramp --------
 void rampSpeed(int target) {
+  if (calibrating) {
+    writeMotor(lastDirection, target);
+    globalCurrentSpeed = target;
+    return;
+  }
   static int current = 0;
   if (current != globalCurrentSpeed) current = globalCurrentSpeed;
 
@@ -501,6 +544,8 @@ void rampSpeed(int target) {
           }
           updateStationLights();
           readEncoderStep();
+          snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
+
           draw();
         }
 
@@ -584,7 +629,7 @@ void calibrateTrain() {
   // Serial.println(rampTime);
   // delay(1000);
   unsigned long lapFwd = 0;  //measureLap(true);
-  //delay(1000);
+  snprintf(line1, sizeof(line1), "CALIBRATE STATION");
   unsigned long lapRev = measureLap(false);
 
   // Save results
@@ -593,7 +638,7 @@ void calibrateTrain() {
   p.fwdLoopMs = lapFwd;
   p.revLoopMs = lapRev;
 
-  EEPROM.put(0, p);  // Write to EEPROM
+  //EEPROM.put(0, p);  // Write to EEPROM
 
   // Log results
   Serial.print("Lap FWD: ");
@@ -645,8 +690,6 @@ unsigned long measureLap(bool forward) {
   // wait for transition HIGH -> LOW
   while (true) {
     if (abortRoute) return;
-    readEncoderStep();
-
     read = analogRead(IR_PIN);
     // Serial.println(read);
     bool state = read < IR_THRESHOLD;
@@ -849,7 +892,7 @@ void setup() {
 
   if (!hasCalibrated && calibrateAtStartup && sensorEnabled) {
     // snprintf(line1, sizeof(line1), "CALIBRATING");
-    calibrateTrain();
+    // calibrateTrain();
     hasCalibrated = true;
     Serial.println("Train Calibration Complete.");
   }
