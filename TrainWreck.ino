@@ -66,7 +66,7 @@ unsigned long revLoopMs = 0;
 
 long stationPositionOffset = 0;
 long stationCenterOffset = 0;
-long stationOverlapOffset = 300;
+long stationOverlapOffset = 0;
 
 // ------- station ---------
 bool sensorEnabled = true;
@@ -162,24 +162,24 @@ void readEncoderStep() {
     }
   }
 
-  // --- AUTO RETURN IF NO BUTTON PRESS AFTER TIMEOUT ---
-  if (mode == MANUAL && !manualLocked && millis() - lastManualInput > 10000) {
-    Serial.println("BUTTON RETURN");
-    mode = AUTO;  // Reset to auto mode after 5 seconds
-    restartRequested = true;
-    abortRoute = false;
-    stationArmed = false;
-  }
+  // // --- AUTO RETURN IF NO BUTTON PRESS AFTER TIMEOUT ---
+  // if (mode == MANUAL && !manualLocked && millis() - lastManualInput > 10000) {
+  //   Serial.println("BUTTON RETURN");
+  //   mode = AUTO;  // Reset to auto mode after 5 seconds
+  //   restartRequested = true;
+  //   abortRoute = false;
+  //   stationArmed = false;
+  // }
 }
 
 void manualControlLoop() {
   Serial.println("ENTER MANUAL");
 
   while (true) {
-    if (!manualLocked && millis() - lastManualInput > 10000) {
-      Serial.println("AUTO RETURN");
-      break;
-    }
+    // if (!manualLocked && millis() - lastManualInput > 10000) {
+    //   Serial.println("AUTO RETURN");
+    //   break;
+    // }
     long pos = speedKnob.read() / 4;
 
     if (pos != lastPos) {
@@ -215,6 +215,7 @@ void manualControlLoop() {
       if (millis() - lastPress > 250) {
         lastPress = millis();
         snprintf(line3, sizeof(line3), "EXIT MANUAL");
+        draw();
         Serial.println("EXIT MANUAL");
         break;
       }
