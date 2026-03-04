@@ -70,7 +70,7 @@ long stationOverlapOffset = 0;
 
 // ------- station ---------
 bool sensorEnabled = true;
-bool calibrateAtStartup = true;
+bool calibrateAtStartup = false;
 volatile bool calibrating = false;
 bool hasCalibrated = false;
 bool stationArmed = false;
@@ -104,12 +104,20 @@ enum StationState {
 StationState currentStationState = IDLE;
 unsigned long stateStartTime = 0;
 bool manualLocked = false;
+bool trippedDirection = false;
 
 int currentSpeedNumber(int pwm) {
   if (isMPH) {
     return speedToMph(pwm);
   }
   return speedToKph(pwm);
+}
+
+char* perHourName() {
+  if (isMPH) {
+    return "MPH";
+  }
+  return "KPH";
 }
 
 int speedToMph(int pwm) {
@@ -143,7 +151,7 @@ void readEncoderStep() {
       restartRequested = true;
       abortRoute = true;
       stationArmed = false;
-      Serial.println("ENTER MANUAL (knob)");
+      Serial.println("REQUEST MANUAL (knob)");
     }
 
     lastPos = pos;
@@ -159,10 +167,10 @@ void readEncoderStep() {
       // If in manual, toggle lock state
       if (mode == MANUAL) {
         if (manualLocked) {
-          manualLocked = false;  // Unlock manual mode
+          manualLocked = false;
           Serial.println("MANUAL LOCK OFF");
         } else {
-          manualLocked = true;  // Lock manual mode
+          manualLocked = true;
           Serial.println("MANUAL LOCK ON");
         }
       }
@@ -179,7 +187,7 @@ void manualControlLoop() {
     if (pos != lastPos) {
       long oldPos = lastPos;
       lastPos = pos;
-
+      int prevSpeed = globalCurrentSpeed;
       long delta = pos - oldPos;
       int magnitude = abs(delta);
 
@@ -191,38 +199,29 @@ void manualControlLoop() {
       if (magnitude > 5) step = 38;
 
       if (delta < 0) {
+        globalCurrentSpeed += step;
+      } else if (delta > 0) {
+        globalCurrentSpeed -= step;
+      }
+
+      if (delta < 0) {
         signalGreen();
         globalCurrentSpeed += step;
       } else if (delta > 0) {
         signalYellow();
         globalCurrentSpeed -= step;
       }
-
       globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
-
-      int prevSpeed = globalCurrentSpeed;
-
-      if (delta < 0) {
-        globalCurrentSpeed += step;
-      } else if (delta > 0) {
-        globalCurrentSpeed -= step;
-      }
-
-      if (prevSpeed > 0 && globalCurrentSpeed <= 0) {
-        globalCurrentSpeed = 0;
+      if (globalCurrentSpeed == 0 && prevSpeed > 0) {
         lastDirection = !lastDirection;
+      }
+      if (globalCurrentSpeed == 0) {
         signalRed();
       }
 
-      globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
       writeMotor(lastDirection, globalCurrentSpeed);
-
       snprintf(line3, sizeof(line3), "MANUAL CONTROL");
-      if (isMPH)
-        snprintf(line2, sizeof(line2), "%d MPH", speedToMph(globalCurrentSpeed));
-      else
-        snprintf(line2, sizeof(line2), "%d KPH", speedToKph(globalCurrentSpeed));
-
+      snprintf(line2, sizeof(line2), "%d %s", speedToMph(globalCurrentSpeed), perHourName());
       draw();
     }
 
@@ -237,7 +236,6 @@ void manualControlLoop() {
       }
     }
   }
-
   mode = AUTO;
   restartRequested = true;
   abortRoute = false;
@@ -522,6 +520,7 @@ void rampSpeed(int target) {
   int start = current;
   int delta = abs(target - start);
   bool rampUp = target > current;
+  trippedDirection = (globalCurrentSpeed > 0);
 
   if (target == 0) stationArmed = false;
 
@@ -583,15 +582,10 @@ void rampSpeed(int target) {
     if (target == 0) {
       updateTafficSignal(current, rampUp);
     } else {
-      if (isMPH) {
-        snprintf(line3, sizeof(line3), "%s %d MPH",
-                 rampUp ? "RAMP TO" : "DOWN TO",
-                 speedToMph(target));
-      } else {
-        snprintf(line3, sizeof(line3), "%s %d",
-                 rampUp ? "RAMP TO" : "DOWN TO",
-                 speedToKph(target));
-      }
+      snprintf(line3, sizeof(line3), "%s %d %s",
+               rampUp ? "RAMP TO" : "DOWN TO",
+               speedToMph(target),
+               perHourName());
     }
     if (targetDirty) {
       targetDirty = false;
@@ -601,11 +595,7 @@ void rampSpeed(int target) {
       rampUp = target > current;
     }
     writeMotor(lastDirection, current);
-    if (isMPH) {
-      snprintf(line2, sizeof(line2), "%d MPH", speedToMph(current));
-    } else {
-      snprintf(line2, sizeof(line2), "%d KPH", speedToKph(current));
-    }
+    snprintf(line2, sizeof(line2), "%d %s", speedToMph(current), perHourName());
     draw();
     updateStationLights();
     readEncoderStep();
@@ -616,32 +606,18 @@ void rampSpeed(int target) {
 // -------- calibrate --------
 // Calibration function
 void calibrateTrain() {
-  // rampSpeed(0);
-  // snprintf(line1, sizeof(line1), "CALIBRATE RAMP");
-  // unsigned long rampTestStartTime = millis();
-  // rampSpeed(MAX_SPEED);
-  // unsigned long rampTime = millis() - rampTestStartTime;
-  // Serial.print("rampTime: ");
-  // Serial.println(rampTime);
-  // delay(1000);
-  unsigned long lapFwd = 0;  //measureLap(true);
+  unsigned long lapFwd = 0;
   snprintf(line1, sizeof(line1), "CALIBRATION");
   draw();
   unsigned long lapRev = measureLap(false);
-  Serial.println("Measured the Lap...");
-  Serial.println(lapRev);
 
-  // Save results
   Persist p;
   p.version = EEPROM_VERSION;
   p.fwdLoopMs = lapFwd;
   p.revLoopMs = lapRev;
-
   EEPROM.put(0, p);  // Write to EEPROM
 
   // Log results
-  Serial.print("FWD Loop Time: ");
-  Serial.println(p.fwdLoopMs);
   Serial.print("REV Loop Time: ");
   Serial.println(p.revLoopMs);
 }
@@ -653,9 +629,6 @@ void loadFromEEPROM() {
   if (p.version == EEPROM_VERSION) {
     fwdLoopMs = p.fwdLoopMs;
     revLoopMs = p.revLoopMs;
-  } else {
-    // No saved data, run calibration
-    // calibrateTrain();
   }
 }
 
@@ -676,10 +649,7 @@ unsigned long measureLap(bool forward) {
   setDirection(forward);
   for (int s = 0; s <= DOCKING_SPEED; s += 6) {
     globalCurrentSpeed = s;
-    if (isMPH)
-      snprintf(line2, sizeof(line2), "%d MPH", speedToMph(globalCurrentSpeed));
-    else
-      snprintf(line2, sizeof(line2), "%d KPH", speedToKph(globalCurrentSpeed));
+    snprintf(line2, sizeof(line2), "%d %s", speedToMph(globalCurrentSpeed), perHourName());
 
     draw();
     writeMotor(forward, s);
@@ -717,10 +687,7 @@ unsigned long measureLap(bool forward) {
 
   unsigned long lap = millis() - start;
   for (int s = DOCKING_SPEED; s >= 0; s -= 6) {
-    if (isMPH)
-      snprintf(line2, sizeof(line2), "%d MPH", speedToMph(globalCurrentSpeed));
-    else
-      snprintf(line2, sizeof(line2), "%d KPH", speedToKph(globalCurrentSpeed));
+    snprintf(line2, sizeof(line2), "%d %s", speedToMph(globalCurrentSpeed), perHourName());
 
     draw();
     writeMotor(forward, s);
@@ -945,11 +912,7 @@ void draw() {
       line2);
 
     u8g2.setFont(u8g2_font_ncenB18_tr);
-    if (isMPH) {
-      u8g2.drawStr(55, 48, "MPH");
-    } else {
-      u8g2.drawStr(55, 48, "KPH");
-    }
+    u8g2.drawStr(55, 48, perHourName());
     const char* statusStr;
 
     if (globalCurrentSpeed == 0) {

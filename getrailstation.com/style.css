@@ -334,8 +334,6 @@ p{
   width: 100%;
   border-radius: 18px;
   overflow: hidden;                /* crops corners */
-  box-shadow: 0 30px 80px rgba(0,0,0,0.12);
-  background: #fff;
 }
 
 .product-frame img {
