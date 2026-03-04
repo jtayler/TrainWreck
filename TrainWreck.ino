@@ -105,6 +105,13 @@ StationState currentStationState = IDLE;
 unsigned long stateStartTime = 0;
 bool manualLocked = false;
 
+int currentSpeedNumber(int pwm) {
+  if (isMPH) {
+    return speedToMph(pwm);
+  }
+  return speedToKph(pwm);
+}
+
 int speedToMph(int pwm) {
   pwm = constrain(pwm, 0, MAX_SPEED);
   return (pwm * MAX_MPH) / MAX_SPEED;
@@ -161,44 +168,53 @@ void readEncoderStep() {
       }
     }
   }
-
-  // // --- AUTO RETURN IF NO BUTTON PRESS AFTER TIMEOUT ---
-  // if (mode == MANUAL && !manualLocked && millis() - lastManualInput > 10000) {
-  //   Serial.println("BUTTON RETURN");
-  //   mode = AUTO;  // Reset to auto mode after 5 seconds
-  //   restartRequested = true;
-  //   abortRoute = false;
-  //   stationArmed = false;
-  // }
 }
 
 void manualControlLoop() {
   Serial.println("ENTER MANUAL");
 
   while (true) {
-    // if (!manualLocked && millis() - lastManualInput > 10000) {
-    //   Serial.println("AUTO RETURN");
-    //   break;
-    // }
     long pos = speedKnob.read() / 4;
 
     if (pos != lastPos) {
       long oldPos = lastPos;
       lastPos = pos;
 
-      if (pos < oldPos) {
+      long delta = pos - oldPos;
+      int magnitude = abs(delta);
+
+      int step = 2;  // slow click
+      if (magnitude > 1) step = 11;
+      if (magnitude > 2) step = 17;
+      if (magnitude > 3) step = 26;
+      if (magnitude > 4) step = 31;
+      if (magnitude > 5) step = 38;
+
+      if (delta < 0) {
         signalGreen();
-        globalCurrentSpeed += 15;
-      } else {
+        globalCurrentSpeed += step;
+      } else if (delta > 0) {
         signalYellow();
-        globalCurrentSpeed -= 15;
+        globalCurrentSpeed -= step;
       }
 
       globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
-      if (globalCurrentSpeed == 0) {
+
+      int prevSpeed = globalCurrentSpeed;
+
+      if (delta < 0) {
+        globalCurrentSpeed += step;
+      } else if (delta > 0) {
+        globalCurrentSpeed -= step;
+      }
+
+      if (prevSpeed > 0 && globalCurrentSpeed <= 0) {
+        globalCurrentSpeed = 0;
         lastDirection = !lastDirection;
         signalRed();
       }
+
+      globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
       writeMotor(lastDirection, globalCurrentSpeed);
 
       snprintf(line3, sizeof(line3), "MANUAL CONTROL");
@@ -498,11 +514,6 @@ void setDirection(bool forward) {
 
 // -------- ramp --------
 void rampSpeed(int target) {
-  if (calibrating) {
-    writeMotor(lastDirection, target);
-    globalCurrentSpeed = target;
-    return;
-  }
   static int current = 0;
   if (current != globalCurrentSpeed) current = globalCurrentSpeed;
 
@@ -562,7 +573,7 @@ void rampSpeed(int target) {
 
         setStationState(AT_STATION);
         dockedThisStop = true;
-        Serial.println("DOCKING COMPLETED");
+        Serial.println("DOCKING INITIATED");
       }
     }
 
@@ -631,7 +642,10 @@ void calibrateTrain() {
   // delay(1000);
   unsigned long lapFwd = 0;  //measureLap(true);
   snprintf(line1, sizeof(line1), "CALIBRATE STATION");
+  draw();
   unsigned long lapRev = measureLap(false);
+  Serial.println("Measured the Lap...");
+  Serial.println(lapRev);
 
   // Save results
   Persist p;
@@ -639,13 +653,9 @@ void calibrateTrain() {
   p.fwdLoopMs = lapFwd;
   p.revLoopMs = lapRev;
 
-  //EEPROM.put(0, p);  // Write to EEPROM
+  EEPROM.put(0, p);  // Write to EEPROM
 
   // Log results
-  Serial.print("Lap FWD: ");
-  Serial.println(lapFwd);
-  Serial.print("Lap REV: ");
-  Serial.println(lapRev);
   Serial.print("FWD Loop Time: ");
   Serial.println(p.fwdLoopMs);
   Serial.print("REV Loop Time: ");
@@ -674,67 +684,67 @@ unsigned long calculateStationPause(bool forward) {
 }
 // Function to measure lap time
 unsigned long measureLap(bool forward) {
+  unsigned long start = 0;
   int read = 0;
-  Serial.println("---- CALIBRATION ----");
-  Serial.println(forward ? "FWD" : "REV");
+  snprintf(line3, sizeof(line3), "RAMP");
+  draw();
 
-  // Set direction and ramp speed
   setDirection(forward);
-  rampSpeed(DOCKING_SPEED);  // Assume this will ramp to speed immediately
+  for (int s = 0; s <= DOCKING_SPEED; s += 6) {
+    globalCurrentSpeed = s;
+    if (isMPH)
+      snprintf(line2, sizeof(line2), "%d MPH", speedToMph(globalCurrentSpeed));
+    else
+      snprintf(line2, sizeof(line2), "%d KPH", speedToKph(globalCurrentSpeed));
 
-  // No delay here because the train will be at speed once rampSpeed() finishes
-
+    draw();
+    writeMotor(forward, s);
+    delay(20);
+  }
   bool lastState = analogRead(IR_PIN) < IR_THRESHOLD;
+  snprintf(line3, sizeof(line3), "TIMING");
+  draw();
 
-  Serial.println("Waiting for falling edge...");
-
-  // wait for transition HIGH -> LOW
   while (true) {
-    if (abortRoute) return;
+    if (abortRoute) {
+      return 0;
+    }
     read = analogRead(IR_PIN);
-    // Serial.println(read);
     bool state = read < IR_THRESHOLD;
     if (!lastState && state) break;
     lastState = state;
   }
+  snprintf(line3, sizeof(line3), "MARK");
+  draw();
 
-  Serial.println("First edge.");
-  Serial.println(read);
+  start = millis();
+  delay(1000);
 
-  // wait for rising edge (clear)
   while (true) {
     read = analogRead(IR_PIN);
     bool state = read < IR_THRESHOLD;
     if (lastState && !state) break;
     lastState = state;
+    yield();
   }
 
-  Serial.println("Clear.");
-  Serial.println(read);
-
-  delay(1000);
-
-  unsigned long start = millis();
-  Serial.println("Timing...");
-
-  while (true) {
-    read = analogRead(IR_PIN);
-    bool state = read < IR_THRESHOLD;
-    if (!lastState && state) break;
-    lastState = state;
-  }
+  snprintf(line3, sizeof(line3), "SET");
+  draw();
 
   unsigned long lap = millis() - start;
+  for (int s = DOCKING_SPEED; s >= 0; s -= 6) {
+    if (isMPH)
+      snprintf(line2, sizeof(line2), "%d MPH", speedToMph(globalCurrentSpeed));
+    else
+      snprintf(line2, sizeof(line2), "%d KPH", speedToKph(globalCurrentSpeed));
 
-  Serial.println();
-  Serial.println("SECOND block detected.");
-  Serial.println(read);
-  Serial.print("Lap time: ");
-  Serial.println(lap);
-
-  rampSpeed(0);  // Stop the motor after measuring
-  Serial.println("---- CALIBRATION END ----");
-  delay(1000);
+    draw();
+    writeMotor(forward, s);
+    globalCurrentSpeed = s;
+    delay(20);
+  }
+  writeMotor(forward, 0);
+  globalCurrentSpeed = 0;
 
   return lap;
 }
@@ -891,14 +901,6 @@ void setup() {
   u8g2.clearBuffer();
   Serial.println("Display Driver Initialized.");
 
-  if (!hasCalibrated && calibrateAtStartup && sensorEnabled) {
-    // snprintf(line1, sizeof(line1), "CALIBRATING");
-    // calibrateTrain();
-    hasCalibrated = true;
-    Serial.println("Train Calibration Complete.");
-  }
-  lastPos = speedKnob.read() / 4;
-
   Serial.println("BOOT");
 }
 
@@ -932,8 +934,8 @@ void draw() {
     u8g2.setFont(u8g2_font_logisoso32_tn);
     int numWidth = u8g2.getStrWidth(line2);
     int numRightEdge = 69;
-    if (line2 >= 100) {
-      //numRightEdge = 76;
+    if (currentSpeedNumber(globalCurrentSpeed) >= 100) {
+      numRightEdge = 75;
     }
     u8g2.drawStr(
       numRightEdge - numWidth,
@@ -942,9 +944,9 @@ void draw() {
 
     u8g2.setFont(u8g2_font_ncenB18_tr);
     if (isMPH) {
-      u8g2.drawStr(56, 48, "MPH");
+      u8g2.drawStr(55, 48, "MPH");
     } else {
-      u8g2.drawStr(56, 48, "KPH");
+      u8g2.drawStr(55, 48, "KPH");
     }
     const char* statusStr;
 
@@ -985,7 +987,7 @@ void draw() {
 
     u8g2.setFont(u8g2_font_7x13_tr);
     u8g2.drawStr(
-      58,
+      57,
       26,
       statusStr);
 
@@ -1071,6 +1073,13 @@ void loop() {
     restartRequested = false;
     rampSpeed(0);
     runRoute(currentRouteIndex);
+    return;
+  }
+
+  if (!hasCalibrated && calibrateAtStartup && sensorEnabled) {
+    calibrateTrain();
+    hasCalibrated = true;
+    Serial.println("Train Calibration Complete.");
     return;
   }
 
