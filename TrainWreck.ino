@@ -536,17 +536,12 @@ void rampSpeed(int target) {
 
   while (current != target) {
     if (abortRoute) return;
-    // Start blinking as soon as we enter docking range
     if (target == 0 && current < (DOCKING_SPEED - 10)) {
       setStationState(ARRIVING);
     }
-
     if (sensorEnabled && target == 0 && !dockedThisStop) {
-
       if (current <= DOCKING_SPEED) {
-
         Serial.println("WAITING FOR STATION EDGE");
-
         while (!stationArmed) {
           if (abortRoute) return;
           int v = analogRead(IR_PIN);
@@ -557,12 +552,9 @@ void rampSpeed(int target) {
           updateStationLights();
           readEncoderStep();
           snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
-
           draw();
         }
-
         unsigned long waitMs = calculateStationPause(lastDirection);
-
         unsigned long startWait = millis();
         while (millis() - startWait < waitMs) {
           if (abortRoute) return;
@@ -570,18 +562,15 @@ void rampSpeed(int target) {
           draw();
           readEncoderStep();
         }
-
         setStationState(AT_STATION);
         dockedThisStop = true;
         Serial.println("DOCKING INITIATED");
       }
     }
-
     // ---- S-CURVE RAMP ----
     int progressed = abs(current - start);
     float phase = (delta == 0) ? 1.0 : (float)progressed / delta;
     int step = max(1, (int)(RAMP_STEP * (0.5 + 1.5 * phase * (1 - phase))));
-
     if (rampUp) {
       current += step;
       if (current > target) current = target;
@@ -589,10 +578,8 @@ void rampSpeed(int target) {
       current -= step;
       if (current < target) current = target;
     }
-
     // ---- OUTPUT ----
     globalCurrentSpeed = current;
-
     if (target == 0) {
       updateTafficSignal(current, rampUp);
     } else {
@@ -606,15 +593,13 @@ void rampSpeed(int target) {
                  speedToKph(target));
       }
     }
-
     if (targetDirty) {
       targetDirty = false;
-      target = targetSpeed;  // adopt new target
-      start = current;       // restart ramp from current
+      target = targetSpeed;
+      start = current;
       delta = abs(target - start);
       rampUp = target > current;
     }
-
     writeMotor(lastDirection, current);
     if (isMPH) {
       snprintf(line2, sizeof(line2), "%d MPH", speedToMph(current));
@@ -625,7 +610,6 @@ void rampSpeed(int target) {
     updateStationLights();
     readEncoderStep();
   }
-
   updateTafficSignal(current, rampUp);
 }
 
@@ -641,7 +625,7 @@ void calibrateTrain() {
   // Serial.println(rampTime);
   // delay(1000);
   unsigned long lapFwd = 0;  //measureLap(true);
-  snprintf(line1, sizeof(line1), "CALIBRATE STATION");
+  snprintf(line1, sizeof(line1), "CALIBRATION");
   draw();
   unsigned long lapRev = measureLap(false);
   Serial.println("Measured the Lap...");
@@ -901,7 +885,26 @@ void setup() {
   u8g2.clearBuffer();
   Serial.println("Display Driver Initialized.");
 
+  splashScreen();
+
   Serial.println("BOOT");
+}
+
+void splashScreen() {
+  const char* msg = "HELLO";
+  u8g2.setFont(u8g2_font_helvB24_tr);
+  u8g2.firstPage();
+  do {
+    u8g2.setDrawColor(1);
+    u8g2.drawBox(0, 0, 128, 64);
+
+    u8g2.setDrawColor(0);
+    u8g2.drawStr(10, 38, msg);
+
+  } while (u8g2.nextPage());
+  delay(4500);
+  u8g2.clearDisplay();
+  delay(120);
 }
 
 // -------- draw --------
@@ -927,7 +930,6 @@ void draw() {
       9,
       line1);
     u8g2.setDrawColor(backColor);
-    u8g2.setFont(u8g2_font_logisoso32_tn);
     u8g2.drawBox(0, 14, 128, 36);
 
     u8g2.setDrawColor(color);
