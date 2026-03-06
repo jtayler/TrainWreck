@@ -550,6 +550,11 @@ void rampSpeed(int target) {
           }
           updateStationLights();
           readEncoderStep();
+          v = analogRead(IR_PIN);
+          if (v < IR_THRESHOLD) {
+            stationArmed = true;
+            stationTick = millis();
+          }
           snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
           draw();
         }
