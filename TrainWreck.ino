@@ -22,7 +22,7 @@ struct Persist {
   byte version;
   unsigned long fwdLoopMs;
   unsigned long revLoopMs;
-  long stationPositionOffset;
+  long stationDistance;
   long stationCenterOffset;
 };
 
@@ -64,13 +64,13 @@ const int DOCKING_SPEED = 165;
 unsigned long fwdLoopMs = 0;
 unsigned long revLoopMs = 0;
 
-long stationPositionOffset = 0;
+long stationDistance = 0;
 long stationCenterOffset = 0;
-long stationMakeupOffset = 400;
+long stationOverlap = 500;
 
 // ------- station ---------
 bool sensorEnabled = true;
-bool calibrateAtStartup = true;
+bool calibrateAtStartup = false;
 volatile bool calibrating = false;
 bool hasCalibrated = false;
 bool stationArmed = false;
@@ -541,6 +541,8 @@ void rampSpeed(int target) {
     if (sensorEnabled && target == 0 && !dockedThisStop) {
       if (current <= DOCKING_SPEED) {
         Serial.println("WAITING FOR STATION EDGE");
+        snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
+        draw();
         while (!stationArmed) {
           if (abortRoute) return;
           int v = analogRead(IR_PIN);
@@ -550,14 +552,8 @@ void rampSpeed(int target) {
           }
           updateStationLights();
           readEncoderStep();
-          v = analogRead(IR_PIN);
-          if (v < IR_THRESHOLD) {
-            stationArmed = true;
-            stationTick = millis();
-          }
-          snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
-          draw();
         }
+        
         unsigned long waitMs = calculateStationPause(lastDirection);
         unsigned long startWait = millis();
         while (millis() - startWait < waitMs) {
@@ -639,9 +635,9 @@ void loadFromEEPROM() {
 
 unsigned long calculateStationPause(bool forward) {
   if (forward) {
-    return stationPositionOffset - stationCenterOffset;
+    return stationDistance - stationCenterOffset + stationOverlap;
   } else {
-    return ((revLoopMs * 0.5) + stationCenterOffset + stationMakeupOffset);
+    return ((revLoopMs * 0.5) + stationCenterOffset + stationOverlap);
   }
 }
 // Function to measure lap time
@@ -711,7 +707,7 @@ void saveToEEPROM() {
   p.version = EEPROM_VERSION;
   p.fwdLoopMs = fwdLoopMs;
   p.revLoopMs = revLoopMs;
-  p.stationPositionOffset = stationPositionOffset;
+  p.stationDistance = stationDistance;
   p.stationCenterOffset = stationCenterOffset;
 
   EEPROM.put(0, p);  // Write the calibration data to EEPROM
@@ -786,10 +782,10 @@ const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
   { 1, HIGH_FREQ, BULLET, NONSTOP, LONG_HAUL },         // Hogwarts Express
   { 2, PEAK, BULLET, LIMITED, LONG_HAUL },              // California Zephyr
   { 3, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },            // Reading Railroad
-  { 4, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LONG_HAUL },  // The Polar Express
+  { 4, OFF_PEAK, SHUTTLE, UNPREDICTABLE, LONG_HAUL },  // The Polar Express
   { 5, PEAK, FREIGHT, LIMITED, LONG_HAUL },             // Union Pacific R.R.
   { 6, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },          // The Orient Express
-  { 7, PEAK, BULLET, LIMITED, LONG_HAUL },              // Broadway Limited
+  { 7, OFF_PEAK, BULLET, LIMITED, LONG_HAUL },              // Broadway Limited
   { 8, HIGH_FREQ, BULLET, UNPREDICTABLE, SHORT_RUN },   // The Silver Streak
   { 9, PEAK, FREIGHT, LIMITED, SHORT_RUN },             // The B&O Railroad
   { 10, PEAK, BULLET, NONSTOP, SHORT_RUN },             // The Flying Rocket
@@ -797,7 +793,7 @@ const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
   { 12, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },         // Flying Scotsman
   { 13, PEAK, BULLET, UNPREDICTABLE, SHORT_RUN },       // Cannonball Express
   { 14, PEAK, SHUTTLE, LIMITED, SHORT_RUN },            // The Blue Comet
-  { 15, OFF_PEAK, BULLET, NONSTOP, LOCAL },             // Taking Pelham 123
+  { 15, HIGH_FREQ, BULLET, NONSTOP, LOCAL },             // Taking Pelham 123
   { 16, PEAK, SHUTTLE, LIMITED, LONG_HAUL },            // Vanderbilt Central
   { 17, PEAK, BULLET, NONSTOP, LONG_HAUL },             // Broadway Limited (duplicate title entry)
   { 18, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL },     // The Circle Line
