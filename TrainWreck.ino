@@ -66,11 +66,11 @@ unsigned long revLoopMs = 0;
 
 long stationPositionOffset = 0;
 long stationCenterOffset = 0;
-long stationOverlapOffset = 0;
+long stationMakeupOffset = 400;
 
 // ------- station ---------
 bool sensorEnabled = true;
-bool calibrateAtStartup = false;
+bool calibrateAtStartup = true;
 volatile bool calibrating = false;
 bool hasCalibrated = false;
 bool stationArmed = false;
@@ -641,7 +641,7 @@ unsigned long calculateStationPause(bool forward) {
   if (forward) {
     return stationPositionOffset - stationCenterOffset;
   } else {
-    return ((revLoopMs * 0.5) + stationCenterOffset + stationOverlapOffset);
+    return ((revLoopMs * 0.5) + stationCenterOffset + stationMakeupOffset);
   }
 }
 // Function to measure lap time
