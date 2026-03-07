@@ -85,21 +85,20 @@
 	(net 0 "")
 	(net 1 "GND")
 	(net 2 "12v")
-	(net 3 "E")
-	(net 4 "A")
-	(net 5 "B")
-	(net 6 "D")
-	(net 7 "VCC")
-	(net 8 "OUT")
-	(net 9 "C")
-	(net 10 "OUT2")
-	(net 11 "VCC2")
-	(net 12 "A2")
-	(net 13 "B2")
-	(net 14 "C2")
-	(net 15 "D2")
-	(net 16 "GND2")
-	(net 17 "V2")
+	(net 3 "A")
+	(net 4 "B")
+	(net 5 "D")
+	(net 6 "VCC")
+	(net 7 "OUT")
+	(net 8 "C")
+	(net 9 "OUT2")
+	(net 10 "VCC2")
+	(net 11 "A2")
+	(net 12 "B2")
+	(net 13 "C2")
+	(net 14 "D2")
+	(net 15 "GND2")
+	(net 16 "V2")
 	(footprint "MountingHole:MountingHole_3.2mm_M3"
 		(layer "F.Cu")
 		(uuid "1240bd0d-2c0b-4e35-8959-a08c75d52d67")
@@ -488,7 +487,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.15625)
-			(net 17 "V2")
+			(net 16 "V2")
 			(uuid "3faa9a21-5092-4165-8851-007690ff8659")
 		)
 		(embedded_fonts no)
@@ -708,7 +707,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.15625)
-			(net 8 "OUT")
+			(net 7 "OUT")
 			(uuid "732c1b63-e8f6-40f0-8aee-20a6f9782555")
 		)
 		(embedded_fonts no)
@@ -916,7 +915,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.15625)
-			(net 6 "D")
+			(net 5 "D")
 			(uuid "047869ce-6202-4f89-8be6-90f8b133e3e3")
 		)
 		(embedded_fonts no)
@@ -1026,7 +1025,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.15625)
-			(net 5 "B")
+			(net 4 "B")
 			(uuid "6347d4e6-3812-49bb-aeff-9f599444b33d")
 		)
 		(embedded_fonts no)
@@ -1893,7 +1892,7 @@
 			(drill 1.3)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 7 "VCC")
+			(net 6 "VCC")
 			(uuid "0986fcd8-f42f-434a-9680-6053f23dfd9f")
 		)
 		(pad "3" thru_hole circle
@@ -1902,7 +1901,7 @@
 			(drill 1.3)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 8 "OUT")
+			(net 7 "OUT")
 			(uuid "000a131f-0286-4b65-8f64-cc5f5974d821")
 		)
 		(embedded_fonts no)
@@ -2014,7 +2013,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.15625)
-			(net 12 "A2")
+			(net 11 "A2")
 			(uuid "7da79f81-2bee-4891-b5d0-45fad7beeb58")
 		)
 		(embedded_fonts no)
@@ -2124,7 +2123,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.15625)
-			(net 4 "A")
+			(net 3 "A")
 			(uuid "5efd97bc-023d-4e6a-ae1c-08ae516cf9d5")
 		)
 		(embedded_fonts no)
@@ -2141,15 +2140,16 @@
 		)
 	)
 	(footprint "TerminalBlock_MetzConnect:TerminalBlock_MetzConnect_Type171_RT13703HBWC_1x03_P7.50mm_Horizontal"
+		(locked yes)
 		(layer "F.Cu")
 		(uuid "a5946aea-f4a2-4d3d-a732-b62d392f320c")
-		(at 93.472 75.184)
+		(at 93.472 74.676)
 		(descr "terminal block Metz Connect Type171_RT13703HBWC, 3 pins, pitch 7.5mm, size 22.5x9mm, drill diameter 1.3mm, pad diameter 2.5mm, https://www.metz-connect.com/externalfiles/311711/863695.PDF, script-generated using https://gitlab.com/kicad/libraries/kicad-footprint-generator/-/tree/master/scripts/TerminalBlock_MetzConnect")
 		(tags "THT terminal block Metz Connect Type171_RT13703HBWC pitch 7.5mm size 22.5x9mm drill 1.3mm pad 2.5mm")
 		(property "Reference" "Sensor B"
 			(at 7.5 -5.62 0)
 			(layer "F.SilkS")
-			(uuid "1377bd8c-3ac3-4a06-8b28-ad9ba9952ec3")
+			(uuid "fd901212-78e8-4d67-a609-74bd62c23e6f")
 			(effects
 				(font
 					(size 1 1)
@@ -2160,7 +2160,7 @@
 		(property "Value" "Sensor"
 			(at 6.35 8.85 0)
 			(layer "F.Fab")
-			(uuid "40148aa6-473d-4ccd-aa64-3acbad41bfa0")
+			(uuid "6d5a84a1-1610-48da-a4e3-52ede68af304")
 			(effects
 				(font
 					(size 1 1)
@@ -2172,7 +2172,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "f0109e77-89c3-4b14-b61e-b21b90942f49")
+			(uuid "3a7d1262-36a9-4928-b41e-25eb2c4c0f29")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2184,7 +2184,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "af89eaeb-af05-45ed-ad50-b3579e4832dc")
+			(uuid "901ff1d3-5658-4b47-b8f0-6452e328865f")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2492,7 +2492,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.1)
-			(net 16 "GND2")
+			(net 15 "GND2")
 			(uuid "e63d1d8b-c060-40d9-8e24-8864da03bb4c")
 		)
 		(pad "2" thru_hole circle
@@ -2501,7 +2501,7 @@
 			(drill 1.3)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 11 "VCC2")
+			(net 10 "VCC2")
 			(uuid "d237ab14-2749-4ec7-beba-4aaa2cc96b5e")
 		)
 		(pad "3" thru_hole circle
@@ -2510,7 +2510,7 @@
 			(drill 1.3)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 10 "OUT2")
+			(net 9 "OUT2")
 			(uuid "df27808c-32a0-4aa3-98d3-494ac1a25329")
 		)
 		(embedded_fonts no)
@@ -2825,7 +2825,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.15625)
-			(net 9 "C")
+			(net 8 "C")
 			(uuid "8e752bf0-730d-4d2a-872d-53b4e4efb0ca")
 		)
 		(embedded_fonts no)
@@ -3240,7 +3240,7 @@
 			(drill 1.3)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 4 "A")
+			(net 3 "A")
 			(uuid "18515cec-3a89-47b3-af76-4151e0d96983")
 		)
 		(pad "3" thru_hole circle
@@ -3249,7 +3249,7 @@
 			(drill 1.3)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 5 "B")
+			(net 4 "B")
 			(uuid "c0782047-3fa3-492e-8955-30e7e6c9cd54")
 		)
 		(pad "4" thru_hole circle
@@ -3258,7 +3258,7 @@
 			(drill 1.3)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 9 "C")
+			(net 8 "C")
 			(uuid "61c8e869-4b40-472b-af40-3d92d1a1ba99")
 		)
 		(pad "5" thru_hole circle
@@ -3267,7 +3267,7 @@
 			(drill 1.3)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 6 "D")
+			(net 5 "D")
 			(uuid "56eab72e-7c1e-401a-a21e-011c7b83d20f")
 		)
 		(embedded_fonts no)
@@ -3379,7 +3379,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.15625)
-			(net 14 "C2")
+			(net 13 "C2")
 			(uuid "1e0065cf-459f-4e8c-8999-8471f831d299")
 		)
 		(embedded_fonts no)
@@ -3491,118 +3491,8 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.15625)
-			(net 11 "VCC2")
+			(net 10 "VCC2")
 			(uuid "4de0fa8b-640c-40fc-a2e8-2ec24f6dff8f")
-		)
-		(embedded_fonts no)
-		(model "${KICAD9_3DMODEL_DIR}/Connector_Wire.3dshapes/SolderWire-0.1sqmm_1x01_D0.4mm_OD1mm.step"
-			(offset
-				(xyz 0 0 0)
-			)
-			(scale
-				(xyz 1 1 1)
-			)
-			(rotate
-				(xyz 0 0 0)
-			)
-		)
-	)
-	(footprint "Connector_Wire:SolderWire-0.1sqmm_1x01_D0.4mm_OD1mm"
-		(layer "F.Cu")
-		(uuid "e10cc17e-2733-4d56-bb7d-c9e31bcdce1a")
-		(at 89.916 56.896 180)
-		(descr "Soldered wire connection, for a single 0.1 mm² wire, basic insulation, conductor diameter 0.4mm, outer diameter 1mm, size source Multi-Contact FLEXI-E 0.10 (https://www.staubli.com/content/dam/ecs/catalogs-brochures/TM/CAB-Main-11014119-en.pdf#page=9), bend radius 3 times outer diameter, generated with kicad-footprint-generator")
-		(tags "connector wire 0.1sqmm")
-		(property "Reference" "E"
-			(at 0 -2 0)
-			(layer "F.SilkS")
-			(uuid "d8aa7ff1-5504-405e-9a0a-df2cfbe73556")
-			(effects
-				(font
-					(size 1 1)
-					(thickness 0.15)
-				)
-			)
-		)
-		(property "Value" "GND"
-			(at 0 2 0)
-			(layer "F.Fab")
-			(hide yes)
-			(uuid "c4c763e8-23a0-4a3a-9316-86718c12ae20")
-			(effects
-				(font
-					(size 1 1)
-					(thickness 0.15)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 0 0 0)
-			(layer "F.Fab")
-			(hide yes)
-			(uuid "f25a5c4c-1aa8-4ab9-92b1-24854a013f6e")
-			(effects
-				(font
-					(size 1.27 1.27)
-					(thickness 0.15)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 0 0 0)
-			(layer "F.Fab")
-			(hide yes)
-			(uuid "f38fbb26-d7a8-42aa-a888-661b6129478f")
-			(effects
-				(font
-					(size 1.27 1.27)
-					(thickness 0.15)
-				)
-			)
-		)
-		(attr exclude_from_pos_files exclude_from_bom)
-		(fp_rect
-			(start -1.3 -1.3)
-			(end 1.3 1.3)
-			(stroke
-				(width 0.05)
-				(type solid)
-			)
-			(fill no)
-			(layer "F.CrtYd")
-			(uuid "9b7a89cd-bc09-4ea1-98d7-86ff911bb6dc")
-		)
-		(fp_circle
-			(center 0 0)
-			(end 0.5 0)
-			(stroke
-				(width 0.1)
-				(type solid)
-			)
-			(fill no)
-			(layer "F.Fab")
-			(uuid "687b54ec-f4d3-49c0-8fb8-3ca40989b5fa")
-		)
-		(fp_text user "${REFERENCE}"
-			(at 0 0 0)
-			(layer "F.Fab")
-			(uuid "992b4b23-17fc-4ec6-8f7e-30c3cab3c149")
-			(effects
-				(font
-					(size 0.25 0.25)
-					(thickness 0.04)
-				)
-			)
-		)
-		(pad "1" thru_hole roundrect
-			(at 0 0 180)
-			(size 1.6 1.6)
-			(drill 0.6)
-			(layers "*.Cu" "*.Mask")
-			(remove_unused_layers no)
-			(roundrect_rratio 0.15625)
-			(net 3 "E")
-			(uuid "14fd5dd4-68fd-4cd0-9c86-aab65c45e180")
 		)
 		(embedded_fonts no)
 		(model "${KICAD9_3DMODEL_DIR}/Connector_Wire.3dshapes/SolderWire-0.1sqmm_1x01_D0.4mm_OD1mm.step"
@@ -3711,7 +3601,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.15625)
-			(net 7 "VCC")
+			(net 6 "VCC")
 			(uuid "e966a746-da6b-49bb-86d3-3fb5bca56f8f")
 		)
 		(embedded_fonts no)
@@ -3728,15 +3618,16 @@
 		)
 	)
 	(footprint "TerminalBlock_MetzConnect:TerminalBlock_MetzConnect_Type171_RT13704HBWC_1x04_P7.50mm_Horizontal"
+		(locked yes)
 		(layer "F.Cu")
 		(uuid "f2211082-f276-416b-a7ad-00e13db81492")
-		(at 60.078 75.184)
+		(at 60.078 74.676)
 		(descr "terminal block Metz Connect Type171_RT13704HBWC, 4 pins, pitch 7.5mm, size 30x9mm, drill diameter 1.3mm, pad diameter 2.5mm, https://www.metz-connect.com/externalfiles/311711/863695.PDF, script-generated using https://gitlab.com/kicad/libraries/kicad-footprint-generator/-/tree/master/scripts/TerminalBlock_MetzConnect")
 		(tags "THT terminal block Metz Connect Type171_RT13704HBWC pitch 7.5mm size 30x9mm drill 1.3mm pad 2.5mm")
 		(property "Reference" "Traffic Light"
 			(at 11.25 -5.62 0)
 			(layer "F.SilkS")
-			(uuid "034ad37c-fc6d-44cb-bd18-6d299831b1f8")
+			(uuid "2d282252-9081-44d5-9321-2e86d429a6d9")
 			(effects
 				(font
 					(size 1 1)
@@ -3747,7 +3638,7 @@
 		(property "Value" "TerminalBlock_MetzConnect_Type171_RT13704HBWC_1x04_P7.50mm_Horizontal"
 			(at 11.25 5.62 0)
 			(layer "F.Fab")
-			(uuid "5e9ed2a6-be53-40d1-a73e-034114d0be45")
+			(uuid "b5a5cb1a-cd23-4cc8-aa2f-6bc7e5e1a951")
 			(effects
 				(font
 					(size 1 1)
@@ -3759,7 +3650,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "71d11f0b-4c60-4f23-8665-97b57803d158")
+			(uuid "f5e747a0-fcbd-46ab-bc10-0d184e2a093d")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3771,7 +3662,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "7aa58472-ac07-4a50-a948-78a172dc8cd4")
+			(uuid "87a6664e-0bc8-4359-a4c6-5250be2b834a")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4113,7 +4004,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.1)
-			(net 16 "GND2")
+			(net 15 "GND2")
 			(uuid "97bab2c7-7115-4826-a5d4-a0bcccf20c6f")
 		)
 		(pad "2" thru_hole circle
@@ -4122,7 +4013,7 @@
 			(drill 1.3)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 12 "A2")
+			(net 11 "A2")
 			(uuid "fb9b792b-0f1c-47d6-90e9-26ccb3a108d2")
 		)
 		(pad "3" thru_hole circle
@@ -4131,7 +4022,7 @@
 			(drill 1.3)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 13 "B2")
+			(net 12 "B2")
 			(uuid "ec458c52-5bfa-44c5-9949-4d3f38433291")
 		)
 		(pad "4" thru_hole circle
@@ -4140,7 +4031,7 @@
 			(drill 1.3)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 14 "C2")
+			(net 13 "C2")
 			(uuid "8a93544f-c9a4-48eb-9fa3-5bacbb45bde9")
 		)
 		(embedded_fonts no)
@@ -4251,7 +4142,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.15625)
-			(net 16 "GND2")
+			(net 15 "GND2")
 			(uuid "ac09ac5b-4c6e-4bb8-b55d-40d2f7e05e66")
 		)
 		(embedded_fonts no)
@@ -4363,7 +4254,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.15625)
-			(net 13 "B2")
+			(net 12 "B2")
 			(uuid "29a0d7c7-02ca-45a3-868b-cad55ecf0e48")
 		)
 		(embedded_fonts no)
@@ -4478,15 +4369,16 @@
 		(embedded_fonts no)
 	)
 	(footprint "TerminalBlock_MetzConnect:TerminalBlock_MetzConnect_Type171_RT13702HBWC_1x02_P7.50mm_Horizontal"
+		(locked yes)
 		(layer "F.Cu")
 		(uuid "fe9f31b3-b228-4392-a284-8def3dcd6a5e")
-		(at 41.85 75.184)
+		(at 41.85 74.676)
 		(descr "terminal block Metz Connect Type171_RT13702HBWC, 2 pins, pitch 7.5mm, size 15x9mm, drill diameter 1.3mm, pad diameter 2.5mm, https://www.metz-connect.com/externalfiles/311711/863695.PDF, script-generated using https://gitlab.com/kicad/libraries/kicad-footprint-generator/-/tree/master/scripts/TerminalBlock_MetzConnect")
 		(tags "THT terminal block Metz Connect Type171_RT13702HBWC pitch 7.5mm size 15x9mm drill 1.3mm pad 2.5mm")
 		(property "Reference" "Crossing Light"
 			(at 3.75 -5.62 0)
 			(layer "F.SilkS")
-			(uuid "503d4959-9fb8-4160-9654-0a6c0571dd9c")
+			(uuid "be38c7b2-207b-4b1c-8d14-813339e03190")
 			(effects
 				(font
 					(size 1 1)
@@ -4497,7 +4389,7 @@
 		(property "Value" "Crossing Light"
 			(at 3.75 8.85 0)
 			(layer "F.Fab")
-			(uuid "00ccf908-9502-419a-b2cd-27637ba00762")
+			(uuid "299e13f4-32b8-41e0-a190-c5023eaf6217")
 			(effects
 				(font
 					(size 1 1)
@@ -4509,7 +4401,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "ad31a087-e01c-411f-b4f1-85e0f6f0857c")
+			(uuid "94dfe374-dd12-47eb-b13b-289d92073e6a")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4521,7 +4413,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "27328a78-053a-4747-83f2-a0d338d84f58")
+			(uuid "0ff576ef-6f4f-4852-9939-f1510be43a49")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4795,7 +4687,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.1)
-			(net 16 "GND2")
+			(net 15 "GND2")
 			(uuid "48a43acf-4629-4437-a0b5-2a92b2a69919")
 		)
 		(pad "2" thru_hole circle
@@ -4804,7 +4696,7 @@
 			(drill 1.3)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 15 "D2")
+			(net 14 "D2")
 			(uuid "36c358cb-91c1-4b7c-8fa1-8e3a67296973")
 		)
 		(embedded_fonts no)
@@ -4826,7 +4718,7 @@
 		(at 95.542 107.188 180)
 		(descr "Soldered wire connection, for a single 0.1 mm² wire, basic insulation, conductor diameter 0.4mm, outer diameter 1mm, size source Multi-Contact FLEXI-E 0.10 (https://www.staubli.com/content/dam/ecs/catalogs-brochures/TM/CAB-Main-11014119-en.pdf#page=9), bend radius 3 times outer diameter, generated with kicad-footprint-generator")
 		(tags "connector wire 0.1sqmm")
-		(property "Reference" "OUT"
+		(property "Reference" "OUT2"
 			(at 0 -2 0)
 			(layer "F.SilkS")
 			(uuid "b1a7d15f-4c2f-420f-b35a-41b8c1925cf5")
@@ -4916,7 +4808,7 @@
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.15625)
-			(net 10 "OUT2")
+			(net 9 "OUT2")
 			(uuid "a749f9d5-496c-41cb-a84b-a84735c59b31")
 		)
 		(embedded_fonts no)
@@ -4968,7 +4860,7 @@
 		)
 	)
 	(gr_text "VCC2"
-		(at 98.626 79.768 0)
+		(at 98.626 79.26 0)
 		(layer "F.SilkS")
 		(uuid "06602193-0060-4085-a9be-f4068d2f32c0")
 		(effects
@@ -4981,7 +4873,7 @@
 		)
 	)
 	(gr_text "GND"
-		(at 39.758 79.756 0)
+		(at 39.758 79.248 0)
 		(layer "F.SilkS")
 		(uuid "12792539-e450-4fce-b8ea-27bae409c185")
 		(effects
@@ -5006,8 +4898,8 @@
 			(justify left bottom)
 		)
 	)
-	(gr_text "D2"
-		(at 47.632 79.756 0)
+	(gr_text "+V"
+		(at 47.244 79.248 0)
 		(layer "F.SilkS")
 		(uuid "29ab494a-0da9-48d6-896d-77b71de5885d")
 		(effects
@@ -5046,7 +4938,7 @@
 		)
 	)
 	(gr_text "C2"
-		(at 80.772 79.768 0)
+		(at 80.772 79.26 0)
 		(layer "F.SilkS")
 		(uuid "4003f3a8-0979-472b-bd76-180bd6028081")
 		(effects
@@ -5149,7 +5041,7 @@
 		)
 	)
 	(gr_text "A2"
-		(at 66.04 79.756 0)
+		(at 66.04 79.248 0)
 		(layer "F.SilkS")
 		(uuid "81913664-2c78-45f0-9f98-00060028d6ba")
 		(effects
@@ -5162,7 +5054,7 @@
 		)
 	)
 	(gr_text "GND"
-		(at 91.514 79.768 0)
+		(at 91.514 79.26 0)
 		(layer "F.SilkS")
 		(uuid "81a33a31-04fd-4477-af7a-8b07576ae5df")
 		(effects
@@ -5188,7 +5080,7 @@
 		)
 	)
 	(gr_text "GND"
-		(at 57.566 79.768 0)
+		(at 57.566 79.26 0)
 		(layer "F.SilkS")
 		(uuid "94a6f12a-bc98-46a6-acbe-05125b2ef370")
 		(effects
@@ -5201,7 +5093,7 @@
 		)
 	)
 	(gr_text "B2"
-		(at 73.406 79.756 0)
+		(at 73.406 79.248 0)
 		(layer "F.SilkS")
 		(uuid "97c42fb0-8984-4a69-b28a-f65fa1c2cae3")
 		(effects
@@ -5252,7 +5144,7 @@
 		)
 	)
 	(gr_text "OUT2"
-		(at 106.172 79.756 0)
+		(at 106.172 79.248 0)
 		(layer "F.SilkS")
 		(uuid "b8984a6d-da23-4bfc-b548-8310a73ac90f")
 		(effects
@@ -5308,7 +5200,7 @@
 		(end 64.262 56.896)
 		(width 0.2)
 		(layer "B.Cu")
-		(net 4)
+		(net 3)
 		(uuid "b07c26c3-4300-43a7-8821-a8d6d26bd896")
 	)
 	(segment
@@ -5316,7 +5208,7 @@
 		(end 96.012 56.896)
 		(width 0.2)
 		(layer "B.Cu")
-		(net 7)
+		(net 6)
 		(uuid "bb43b40b-40a0-4c47-8006-7456f986415c")
 	)
 	(segment
@@ -5324,7 +5216,7 @@
 		(end 102.362 56.896)
 		(width 0.2)
 		(layer "B.Cu")
-		(net 8)
+		(net 7)
 		(uuid "74eddd8f-866b-4f81-8827-0baace4393fa")
 	)
 	(segment
@@ -5332,7 +5224,7 @@
 		(end 79.368 26.122)
 		(width 0.2)
 		(layer "B.Cu")
-		(net 9)
+		(net 8)
 		(uuid "1c8349a2-6cc6-491b-bcf0-e4c7eedab823")
 	)
 	(segment
@@ -5340,7 +5232,7 @@
 		(end 95.542 107.188)
 		(width 0.2)
 		(layer "B.Cu")
-		(net 10)
+		(net 9)
 		(uuid "d9f7202e-72ba-46ef-8211-0995c5e4261f")
 	)
 	(segment
@@ -5348,7 +5240,7 @@
 		(end 89.192 107.188)
 		(width 0.2)
 		(layer "B.Cu")
-		(net 11)
+		(net 10)
 		(uuid "735bf005-a849-4f4b-b9d0-146103049508")
 	)
 	(segment
@@ -5356,7 +5248,7 @@
 		(end 70.142 107.188)
 		(width 0.2)
 		(layer "B.Cu")
-		(net 12)
+		(net 11)
 		(uuid "207e9de3-711c-4a70-bffb-d57f701191e9")
 	)
 	(embedded_fonts no)
