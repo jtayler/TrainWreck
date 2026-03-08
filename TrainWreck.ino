@@ -20,10 +20,10 @@
 
 struct Persist {
   byte version;
-  unsigned long fwdLoopMs;
-  unsigned long revLoopMs;
-  long stationDistance;
-  long stationCenterOffset;
+  unsigned long circuitLoopMs;
+  bool calibrateAtStartup;
+  // unsigned long snoozingMinutes;
+  // long stationCenterOffset;
 };
 
 // --- display driver ---
@@ -61,12 +61,10 @@ const float MAX_MPH = 72.0;
 const int DOCKING_SPEED = 165;
 
 // ----- station stop -------
-unsigned long fwdLoopMs = 0;
-unsigned long revLoopMs = 0;
+unsigned long circuitLoopMs = 0;
 
-long stationDistance = 0;
-long stationCenterOffset = 0;
-long stationOverlap = 500;
+long trailingEdgeOffset = 1200;
+long stationCenterOffset = 400;
 
 // ------- station ---------
 bool sensorEnabled = true;
@@ -75,6 +73,7 @@ volatile bool calibrating = false;
 bool hasCalibrated = false;
 bool stationArmed = false;
 unsigned long stationTick = 0;
+unsigned long snoozingMinutes = 5; // 20 and Never
 
 // ----- dip behavior -----
 //const int DIP_SPEED = MAX_SPEED * 3.6 / 10;  // 25MPH
@@ -180,6 +179,10 @@ void readEncoderStep() {
 
 void manualControlLoop() {
   Serial.println("ENTER MANUAL");
+  snprintf(line3, sizeof(line3), "MANUAL CONTROL");
+  allOff();
+
+  static unsigned long snoozeTime = 0;
 
   while (true) {
     long pos = speedKnob.read() / 4;
@@ -191,18 +194,12 @@ void manualControlLoop() {
       long delta = pos - oldPos;
       int magnitude = abs(delta);
 
-      int step = 2;  // slow click
+      int step = 2;
       if (magnitude > 1) step = 11;
       if (magnitude > 2) step = 17;
       if (magnitude > 3) step = 26;
       if (magnitude > 4) step = 31;
       if (magnitude > 5) step = 38;
-
-      if (delta < 0) {
-        globalCurrentSpeed += step;
-      } else if (delta > 0) {
-        globalCurrentSpeed -= step;
-      }
 
       if (delta < 0) {
         signalGreen();
@@ -211,18 +208,26 @@ void manualControlLoop() {
         signalYellow();
         globalCurrentSpeed -= step;
       }
+
       globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
+
       if (globalCurrentSpeed == 0 && prevSpeed > 0) {
         lastDirection = !lastDirection;
+        snoozeTime = millis();
       }
-      if (globalCurrentSpeed == 0) {
-        signalRed();
+
+      if (globalCurrentSpeed > 0) {
+        snoozeTime = 0;
       }
 
       writeMotor(lastDirection, globalCurrentSpeed);
-      snprintf(line3, sizeof(line3), "MANUAL CONTROL");
       snprintf(line2, sizeof(line2), "%d %s", speedToMph(globalCurrentSpeed), perHourName());
       draw();
+    }
+
+    if (globalCurrentSpeed == 0) {
+      if (millis() - snoozeTime < (snoozingMinutes * 60 * 1000)) signalRed();
+      else signalOff();
     }
 
     static unsigned long lastPress = 0;
@@ -339,6 +344,12 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
 }
 
 // -------- signal --------
+void signalOff() {
+  digitalWrite(YEL_PIN, LOW);
+  digitalWrite(GRN_PIN, LOW);
+  digitalWrite(RED_PIN, LOW);
+}
+
 void signalRed() {
   digitalWrite(YEL_PIN, LOW);
   digitalWrite(GRN_PIN, LOW);
@@ -376,8 +387,14 @@ const unsigned long DEPART_BLINK_MS = 4000;
 const unsigned long HOLD_AFTER_LEAVE = 3000;
 const unsigned long FADE_MS = 4000;
 
+void allOff() {
+  digitalWrite(STN1_PIN, LOW);
+  digitalWrite(STN2_PIN, LOW);
+  digitalWrite(STN3_PIN, LOW);
+  digitalWrite(STN4_PIN, LOW);
+}
+
 void allOn() {
-  //Serial.print("ALL ON! ");
   digitalWrite(STN1_PIN, HIGH);
   digitalWrite(STN2_PIN, HIGH);
   digitalWrite(STN3_PIN, HIGH);
@@ -553,7 +570,7 @@ void rampSpeed(int target) {
           updateStationLights();
           readEncoderStep();
         }
-        
+
         unsigned long waitMs = calculateStationPause(lastDirection);
         unsigned long startWait = millis();
         while (millis() - startWait < waitMs) {
@@ -614,13 +631,15 @@ void calibrateTrain() {
 
   Persist p;
   p.version = EEPROM_VERSION;
-  p.fwdLoopMs = lapFwd;
-  p.revLoopMs = lapRev;
+  p.circuitLoopMs = lapRev;
+  p.calibrateAtStartup = calibrateAtStartup;
+  // p.snoozingMinutes = snoozingMinutes;
+
   EEPROM.put(0, p);  // Write to EEPROM
 
   // Log results
   Serial.print("REV Loop Time: ");
-  Serial.println(p.revLoopMs);
+  Serial.println(p.circuitLoopMs);
 }
 
 void loadFromEEPROM() {
@@ -628,16 +647,18 @@ void loadFromEEPROM() {
   EEPROM.get(0, p);
 
   if (p.version == EEPROM_VERSION) {
-    fwdLoopMs = p.fwdLoopMs;
-    revLoopMs = p.revLoopMs;
+    circuitLoopMs = p.circuitLoopMs;
+    calibrateAtStartup = p.calibrateAtStartup;
+    // snoozingMinutes = p.snoozingMinutes;
+
   }
 }
 
 unsigned long calculateStationPause(bool forward) {
   if (forward) {
-    return stationDistance - stationCenterOffset + stationOverlap;
+    return stationCenterOffset;
   } else {
-    return ((revLoopMs * 0.5) + stationCenterOffset + stationOverlap);
+    return ((circuitLoopMs * 0.5) + trailingEdgeOffset - stationCenterOffset);
   }
 }
 // Function to measure lap time
@@ -654,7 +675,6 @@ unsigned long measureLap(bool forward) {
 
     draw();
     writeMotor(forward, s);
-    delay(20);
   }
   bool lastState = analogRead(IR_PIN) < IR_THRESHOLD;
   snprintf(line3, sizeof(line3), "TIMING");
@@ -672,15 +692,14 @@ unsigned long measureLap(bool forward) {
   snprintf(line3, sizeof(line3), "MARK");
   draw();
 
-  start = millis();
   delay(1000);
 
+  start = millis();
   while (true) {
     read = analogRead(IR_PIN);
     bool state = read < IR_THRESHOLD;
     if (lastState && !state) break;
     lastState = state;
-    yield();
   }
 
   snprintf(line3, sizeof(line3), "SET");
@@ -693,7 +712,6 @@ unsigned long measureLap(bool forward) {
     draw();
     writeMotor(forward, s);
     globalCurrentSpeed = s;
-    delay(20);
   }
   writeMotor(forward, 0);
   globalCurrentSpeed = 0;
@@ -705,10 +723,9 @@ unsigned long measureLap(bool forward) {
 void saveToEEPROM() {
   Persist p;
   p.version = EEPROM_VERSION;
-  p.fwdLoopMs = fwdLoopMs;
-  p.revLoopMs = revLoopMs;
-  p.stationDistance = stationDistance;
-  p.stationCenterOffset = stationCenterOffset;
+  p.circuitLoopMs = circuitLoopMs;
+  p.calibrateAtStartup = calibrateAtStartup;
+  // p.stationCenterOffset = stationCenterOffset;
 
   EEPROM.put(0, p);  // Write the calibration data to EEPROM
 }
@@ -778,30 +795,30 @@ struct RouteProfile {
 };
 
 const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
-  { 0, PEAK, SHUTTLE, LIMITED, SHORT_RUN },             // Pennsylvania Line
-  { 1, HIGH_FREQ, BULLET, NONSTOP, LONG_HAUL },         // Hogwarts Express
-  { 2, PEAK, BULLET, LIMITED, LONG_HAUL },              // California Zephyr
-  { 3, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },            // Reading Railroad
+  { 0, PEAK, SHUTTLE, LIMITED, SHORT_RUN },            // Pennsylvania Line
+  { 1, HIGH_FREQ, BULLET, NONSTOP, LONG_HAUL },        // Hogwarts Express
+  { 2, PEAK, BULLET, LIMITED, LONG_HAUL },             // California Zephyr
+  { 3, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },           // Reading Railroad
   { 4, OFF_PEAK, SHUTTLE, UNPREDICTABLE, LONG_HAUL },  // The Polar Express
-  { 5, PEAK, FREIGHT, LIMITED, LONG_HAUL },             // Union Pacific R.R.
-  { 6, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },          // The Orient Express
-  { 7, OFF_PEAK, BULLET, LIMITED, LONG_HAUL },              // Broadway Limited
-  { 8, HIGH_FREQ, BULLET, UNPREDICTABLE, SHORT_RUN },   // The Silver Streak
-  { 9, PEAK, FREIGHT, LIMITED, SHORT_RUN },             // The B&O Railroad
-  { 10, PEAK, BULLET, NONSTOP, SHORT_RUN },             // The Flying Rocket
-  { 11, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },           // Grand Central Line
-  { 12, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },         // Flying Scotsman
-  { 13, PEAK, BULLET, UNPREDICTABLE, SHORT_RUN },       // Cannonball Express
-  { 14, PEAK, SHUTTLE, LIMITED, SHORT_RUN },            // The Blue Comet
-  { 15, HIGH_FREQ, BULLET, NONSTOP, LOCAL },             // Taking Pelham 123
-  { 16, PEAK, SHUTTLE, LIMITED, LONG_HAUL },            // Vanderbilt Central
-  { 17, PEAK, BULLET, NONSTOP, LONG_HAUL },             // Broadway Limited (duplicate title entry)
-  { 18, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL },     // The Circle Line
-  { 19, PEAK, BULLET, NONSTOP, LONG_HAUL },             // Empire State Exp
-  { 20, HIGH_FREQ, SHUTTLE, LIMITED, LONG_HAUL },       // The Great Ghan
-  { 21, PEAK, SHUTTLE, LIMITED, LONG_HAUL },            // Hudson River Ltd
-  { 22, PEAK, BULLET, NONSTOP, LONG_HAUL },             // 20th Century Ltd
-  { 23, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL }      // Thomas & Friends
+  { 5, PEAK, FREIGHT, LIMITED, LONG_HAUL },            // Union Pacific R.R.
+  { 6, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },         // The Orient Express
+  { 7, OFF_PEAK, BULLET, LIMITED, LONG_HAUL },         // Broadway Limited
+  { 8, HIGH_FREQ, BULLET, UNPREDICTABLE, SHORT_RUN },  // The Silver Streak
+  { 9, PEAK, FREIGHT, LIMITED, SHORT_RUN },            // The B&O Railroad
+  { 10, PEAK, BULLET, NONSTOP, SHORT_RUN },            // The Flying Rocket
+  { 11, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },          // Grand Central Line
+  { 12, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },        // Flying Scotsman
+  { 13, PEAK, BULLET, UNPREDICTABLE, SHORT_RUN },      // Cannonball Express
+  { 14, PEAK, SHUTTLE, LIMITED, SHORT_RUN },           // The Blue Comet
+  { 15, HIGH_FREQ, BULLET, NONSTOP, LOCAL },           // Taking Pelham 123
+  { 16, PEAK, SHUTTLE, LIMITED, LONG_HAUL },           // Vanderbilt Central
+  { 17, PEAK, BULLET, NONSTOP, LONG_HAUL },            // Broadway Limited (duplicate title entry)
+  { 18, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL },    // The Circle Line
+  { 19, PEAK, BULLET, NONSTOP, LONG_HAUL },            // Empire State Exp
+  { 20, HIGH_FREQ, SHUTTLE, LIMITED, LONG_HAUL },      // The Great Ghan
+  { 21, PEAK, SHUTTLE, LIMITED, LONG_HAUL },           // Hudson River Ltd
+  { 22, PEAK, BULLET, NONSTOP, LONG_HAUL },            // 20th Century Ltd
+  { 23, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL }     // Thomas & Friends
 };
 
 const int USER_ROUTES[] = { 15, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 };
@@ -818,6 +835,17 @@ struct OperatingState {
 RouteProfile currentRoute;
 
 // -------- setup --------
+
+bool detectSensor() {
+  unsigned long start = millis();
+
+  while (millis() - start < 500) {
+    int v = analogRead(IR_PIN);
+    if (abs(v) > 10) return true;
+  }
+  return false;
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println();
@@ -832,12 +860,6 @@ void setup() {
   pinMode(buttonPin, INPUT_PULLUP);
   Serial.println("Control Knob Setup.");
 
-  pinMode(IR_PIN, INPUT);
-  Serial.println("IR Sensor Connected.");
-
-  loadFromEEPROM();
-  Serial.println("EPROM Loaded.");
-
   pinMode(STN1_PIN, OUTPUT);
   pinMode(STN2_PIN, OUTPUT);
   pinMode(STN3_PIN, OUTPUT);
@@ -849,11 +871,24 @@ void setup() {
   pinMode(GRN_PIN, OUTPUT);
   Serial.println("Traffic Lights Setup.");
 
+  loadFromEEPROM();
+  Serial.println("EPROM Loaded.");
+
   u8g2.begin();
   u8g2.clearBuffer();
   Serial.println("Display Driver Initialized.");
 
+  Serial.println("Splash.");
   splashScreen();
+  Serial.println("Detect Sensor.");
+
+  pinMode(IR_PIN, INPUT);
+  sensorEnabled = detectSensor();
+  if (sensorEnabled) {
+    Serial.println("IR Sensor Detected.");
+  } else {
+    Serial.println("IR Sensor Disabled.");
+  }
 
   Serial.println("BOOT");
 }
@@ -870,7 +905,7 @@ void splashScreen() {
     u8g2.drawStr(10, 38, msg);
 
   } while (u8g2.nextPage());
-  delay(4500);
+  delay(1000);
   u8g2.clearDisplay();
   delay(120);
 }
