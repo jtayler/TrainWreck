@@ -1,5 +1,5 @@
 # Logs
-case/breakoutboard/BreakoutBoard-backups
+*-backups
 logs
 *_autosave*
 *.lck
