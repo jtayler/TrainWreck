@@ -2649,7 +2649,7 @@
 		)
 	)
 	(gr_text "GND"
-		(at 92.964 29.356 0)
+		(at 93.472 29.356 0)
 		(layer "F.SilkS")
 		(uuid "e532f812-3d4e-4229-ad98-e8be432915e3")
 		(effects
@@ -2685,7 +2685,7 @@
 	(segment
 		(start 39.744 25.012)
 		(end 52.578 37.846)
-		(width 0.2)
+		(width 1)
 		(layer "B.Cu")
 		(net 1)
 		(uuid "1ad7164a-4785-434b-bd91-63208f5a8de8")
@@ -2749,7 +2749,7 @@
 	(segment
 		(start 52.578 37.846)
 		(end 52.578 56.896)
-		(width 0.2)
+		(width 1)
 		(layer "B.Cu")
 		(net 1)
 		(uuid "edb6e65a-8d9c-4922-bb5d-93a9f5c9592a")
@@ -2757,7 +2757,7 @@
 	(segment
 		(start 59.69 37.338)
 		(end 47.244 24.892)
-		(width 0.2)
+		(width 1)
 		(layer "B.Cu")
 		(net 2)
 		(uuid "1ff2e6e3-9344-43c6-8c38-c302ffc5a9a3")
@@ -2765,7 +2765,7 @@
 	(segment
 		(start 59.69 56.896)
 		(end 59.69 37.338)
-		(width 0.2)
+		(width 1)
 		(layer "B.Cu")
 		(net 2)
 		(uuid "c7d3492f-0ba1-40f9-83c6-f34560478370")

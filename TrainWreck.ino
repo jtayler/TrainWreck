@@ -63,7 +63,7 @@ const int DOCKING_SPEED = 165;
 // ----- station stop -------
 unsigned long circuitLoopMs = 0;
 
-long trailingEdgeOffset = 1200;
+long trailingEdgeOffset = 800;
 long stationCenterOffset = 400;
 
 // ------- station ---------
