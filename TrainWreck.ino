@@ -73,7 +73,7 @@ volatile bool calibrating = false;
 bool hasCalibrated = false;
 bool stationArmed = false;
 unsigned long stationTick = 0;
-unsigned long snoozingMinutes = 5; // 20 and Never
+unsigned long snoozingMinutes = 5;  // 20 and Never
 
 // ----- dip behavior -----
 //const int DIP_SPEED = MAX_SPEED * 3.6 / 10;  // 25MPH
@@ -180,7 +180,6 @@ void readEncoderStep() {
 void manualControlLoop() {
   Serial.println("ENTER MANUAL");
   snprintf(line3, sizeof(line3), "MANUAL CONTROL");
-  allOff();
 
   static unsigned long snoozeTime = 0;
 
@@ -205,11 +204,24 @@ void manualControlLoop() {
         signalGreen();
         globalCurrentSpeed += step;
       } else if (delta > 0) {
-        signalYellow();
         globalCurrentSpeed -= step;
+        if (globalCurrentSpeed < 1) {
+          signalRed();
+        } else {
+          signalYellow();
+        }
       }
 
       globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
+
+      if (globalCurrentSpeed == 0) {
+        setStationState(AT_STATION);
+      } else if (globalCurrentSpeed < DOCKING_SPEED - 10) {
+        setStationState(ARRIVING);
+      } else {
+        //setStationState(IDLE);
+      }
+      updateStationLights();
 
       if (globalCurrentSpeed == 0 && prevSpeed > 0) {
         lastDirection = !lastDirection;
@@ -227,7 +239,10 @@ void manualControlLoop() {
 
     if (globalCurrentSpeed == 0) {
       if (millis() - snoozeTime < (snoozingMinutes * 60 * 1000)) signalRed();
-      else signalOff();
+      else {
+        signalOff();
+        stationLightsOff();
+      }
     }
 
     static unsigned long lastPress = 0;
@@ -387,14 +402,14 @@ const unsigned long DEPART_BLINK_MS = 4000;
 const unsigned long HOLD_AFTER_LEAVE = 3000;
 const unsigned long FADE_MS = 4000;
 
-void allOff() {
+void stationLightsOff() {
   digitalWrite(STN1_PIN, LOW);
   digitalWrite(STN2_PIN, LOW);
   digitalWrite(STN3_PIN, LOW);
   digitalWrite(STN4_PIN, LOW);
 }
 
-void allOn() {
+void stationLightsOn() {
   digitalWrite(STN1_PIN, HIGH);
   digitalWrite(STN2_PIN, HIGH);
   digitalWrite(STN3_PIN, HIGH);
@@ -480,7 +495,7 @@ void updateStationLights() {
       static bool fading = false;
 
       if (!fading) {
-        allOn();
+        stationLightsOn();
         if (elapsed >= HOLD_AFTER_LEAVE) {
           fading = true;
           stateStartTime = millis();
@@ -494,7 +509,7 @@ void updateStationLights() {
       }
       break;
     case AT_STATION:
-      allOn();  // Solid lights while stopped
+      stationLightsOn();  // Solid lights while stopped
       break;
 
     case IDLE:
@@ -650,7 +665,6 @@ void loadFromEEPROM() {
     circuitLoopMs = p.circuitLoopMs;
     calibrateAtStartup = p.calibrateAtStartup;
     // snoozingMinutes = p.snoozingMinutes;
-
   }
 }
 
