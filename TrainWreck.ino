@@ -56,9 +56,9 @@ const int STN4_PIN = A4;
 
 // -------- tuning ---------
 const int MAX_SPEED = 255;
+const int DOCKING_SPEED = 165;
 const int RAMP_STEP = 10;
 const float MAX_MPH = 72.0;
-const int DOCKING_SPEED = 165;
 
 // ----- station stop -------
 unsigned long circuitLoopMs = 0;
@@ -76,9 +76,9 @@ unsigned long stationTick = 0;
 unsigned long snoozingMinutes = 5;  // 20 and Never
 
 // ----- dip behavior -----
-//const int DIP_SPEED = MAX_SPEED * 3.6 / 10;  // 25MPH
-const int DIP_SPEED = MAX_SPEED * 4.9 / 10;  // 35MPH
-const unsigned long DIP_TIME = 3600;         // ms per dip
+const int DIP_SPEED = MAX_SPEED * 3.6 / 10;  // 25MPH
+// const int DIP_SPEED = MAX_SPEED * 4.9 / 10;  // 35MPH
+const unsigned long DIP_TIME = 3600;  // ms per dip
 
 // -------- display --------
 bool isMPH = true;
@@ -93,14 +93,14 @@ char line2[64] = "0";
 char line3[64] = "READY";
 
 enum StationState {
-  IDLE,
+  CRUISING,
   ARRIVING,
   AT_STATION,
   DEPARTING,
   COOL_DOWN
 };
 
-StationState currentStationState = IDLE;
+StationState currentStationState = CRUISING;
 unsigned long stateStartTime = 0;
 bool manualLocked = false;
 bool trippedDirection = false;
@@ -176,6 +176,7 @@ void readEncoderStep() {
     }
   }
 }
+static long delta = 0;
 
 void manualControlLoop() {
   Serial.println("ENTER MANUAL");
@@ -184,13 +185,37 @@ void manualControlLoop() {
   static unsigned long snoozeTime = 0;
 
   while (true) {
+    updateStationLights();
     long pos = speedKnob.read() / 4;
+    if (delta < 0) {
+      if (globalCurrentSpeed == 0) {
+        signalRed();
+      } else {
+        signalYellow();
+      }
+    } else if (delta > 0) {
+      signalGreen();
+    } else {
+      signalRed();
+    }
+
+    if (currentStationState == CRUISING) {
+      if (globalCurrentSpeed == 0) {
+        setStationState(AT_STATION);
+      } else if (delta < 0 && globalCurrentSpeed < DOCKING_SPEED) {
+        setStationState(ARRIVING);
+      }
+    } else if (currentStationState == AT_STATION) {
+      if (delta > 0 && globalCurrentSpeed > 0) {
+        setStationState(DEPARTING);
+      }
+    }
 
     if (pos != lastPos) {
       long oldPos = lastPos;
       lastPos = pos;
       int prevSpeed = globalCurrentSpeed;
-      long delta = pos - oldPos;
+      delta = oldPos - pos;
       int magnitude = abs(delta);
 
       int step = 2;
@@ -200,28 +225,11 @@ void manualControlLoop() {
       if (magnitude > 4) step = 31;
       if (magnitude > 5) step = 38;
 
-      if (delta < 0) {
-        signalGreen();
-        globalCurrentSpeed += step;
-      } else if (delta > 0) {
-        globalCurrentSpeed -= step;
-        if (globalCurrentSpeed < 1) {
-          signalRed();
-        } else {
-          signalYellow();
-        }
+      if (delta != 0) {
+        globalCurrentSpeed += (delta > 0 ? step : -step);
       }
 
       globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
-
-      if (globalCurrentSpeed == 0) {
-        setStationState(AT_STATION);
-      } else if (globalCurrentSpeed < DOCKING_SPEED - 10) {
-        setStationState(ARRIVING);
-      } else {
-        //setStationState(IDLE);
-      }
-      updateStationLights();
 
       if (globalCurrentSpeed == 0 && prevSpeed > 0) {
         lastDirection = !lastDirection;
@@ -504,7 +512,7 @@ void updateStationLights() {
         fadeToBlackMs(FADE_MS);
         if (millis() - stateStartTime >= FADE_MS) {
           fading = false;
-          setStationState(IDLE);
+          setStationState(CRUISING);
         }
       }
       break;
@@ -512,7 +520,7 @@ void updateStationLights() {
       stationLightsOn();  // Solid lights while stopped
       break;
 
-    case IDLE:
+    case CRUISING:
       // All station pins LOW
       digitalWrite(STN1_PIN, LOW);
       digitalWrite(STN2_PIN, LOW);
@@ -761,13 +769,17 @@ const char l13[] PROGMEM = "Cannonball Express";
 const char l14[] PROGMEM = "The Blue Comet";
 const char l15[] PROGMEM = "Taking Pelham 123";
 const char l16[] PROGMEM = "Vanderbilt Central";
-const char l17[] PROGMEM = "Broadway Limited";
+const char l17[] PROGMEM = "Broadway Local";
 const char l18[] PROGMEM = "The Circle Line";
 const char l19[] PROGMEM = "Empire State Exp";
 const char l20[] PROGMEM = "The Great Ghan";
 const char l21[] PROGMEM = "Hudson River Ltd";
 const char l22[] PROGMEM = "20th Century Ltd";
 const char l23[] PROGMEM = "Thomas & Friends";
+
+const char l26[] PROGMEM = "Snowpiercer";
+const char l27[] PROGMEM = "Trans-Siberian";
+const char l28[] PROGMEM = "The Starlight Exp";
 
 enum Schedule {
   HIGH_FREQ,
@@ -812,7 +824,7 @@ const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
   { 0, PEAK, SHUTTLE, LIMITED, SHORT_RUN },            // Pennsylvania Line
   { 1, HIGH_FREQ, BULLET, NONSTOP, LONG_HAUL },        // Hogwarts Express
   { 2, PEAK, BULLET, LIMITED, LONG_HAUL },             // California Zephyr
-  { 3, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },           // Reading Railroad
+  { 3, HIGH_FREQ, FREIGHT, LIMITED, LONG_HAUL },       // Reading Railroad
   { 4, OFF_PEAK, SHUTTLE, UNPREDICTABLE, LONG_HAUL },  // The Polar Express
   { 5, PEAK, FREIGHT, LIMITED, LONG_HAUL },            // Union Pacific R.R.
   { 6, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },         // The Orient Express
@@ -826,7 +838,7 @@ const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
   { 14, PEAK, SHUTTLE, LIMITED, SHORT_RUN },           // The Blue Comet
   { 15, HIGH_FREQ, BULLET, NONSTOP, LOCAL },           // Taking Pelham 123
   { 16, PEAK, SHUTTLE, LIMITED, LONG_HAUL },           // Vanderbilt Central
-  { 17, PEAK, BULLET, NONSTOP, LONG_HAUL },            // Broadway Limited (duplicate title entry)
+  { 17, PEAK, BULLET, NONSTOP, LONG_HAUL },            // Broadway Local
   { 18, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL },    // The Circle Line
   { 19, PEAK, BULLET, NONSTOP, LONG_HAUL },            // Empire State Exp
   { 20, HIGH_FREQ, SHUTTLE, LIMITED, LONG_HAUL },      // The Great Ghan
@@ -835,7 +847,7 @@ const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
   { 23, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL }     // Thomas & Friends
 };
 
-const int USER_ROUTES[] = { 15, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 };
+const int USER_ROUTES[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 };
 const int ROUTE_COUNT = sizeof(USER_ROUTES) / sizeof(USER_ROUTES[0]);
 
 struct OperatingState {
@@ -968,36 +980,136 @@ void draw() {
     if (globalCurrentSpeed == 0) {
       statusStr = "HALTED";
     } else {
-      const char* dirA = "UPTOWN";
-      const char* dirB = "DOWNTOWN";
+      // Declare these at the top of your function
+      const __FlashStringHelper* dirA;
+      const __FlashStringHelper* dirB;
 
-      if (currentRoute.titleId == 1) {  // Hogwarts Express
-        dirA = "HOGSMEADE";
-        dirB = "LONDON";
-      } else if (currentRoute.titleId == 15) {  // Pelham
-        dirA = "UPTOWN";
-        dirB = "DOWNTOWN";
-      } else if (currentRoute.titleId == 18) {  // The Circle Line
-        dirA = "CLOCKWISE";
-        dirB = "COUNTER CW";
-      } else if (currentRoute.titleId == 0 || currentRoute.titleId == 6 || currentRoute.titleId == 2) {  // Penn, Orient, Zephyr
-        dirA = "EASTBOUND";
-        dirB = "WESTBOUND";
-      } else if (currentRoute.titleId == 4 || currentRoute.titleId == 21) {  // Polar Express, Hudson
-        dirA = "NORTHBOUND";
-        dirB = "SOUTHBOUND";
-      } else if (currentRoute.equipment == FREIGHT) {
-        dirA = "HEAVY HAUL";
-        dirB = "RETURN RUN";
-      } else if (currentRoute.equipment == SHUTTLE) {
-        dirA = "CROSSTOWN";
-        dirB = "INTERURBAN";
-      } else if (currentRoute.service == UNPREDICTABLE) {
-        dirA = "INBOUND";
-        dirB = "OUTBOUND";
+      switch (currentRoute.titleId) {
+        case 0:  // Pennsylvania Line
+          dirA = F("PHILLY");
+          dirB = F("PENN STA");
+          break;
+        case 1:  // Hogwarts Express
+          dirA = F("HOGSMEADE");
+          dirB = F("LONDON");
+          break;
+        case 2:  // California Zephyr
+          dirA = F("SAN FRAN");
+          dirB = F("CHICAGO");
+          break;
+        case 3:  // Reading Railroad
+          dirA = F("PENN STA");
+          dirB = F("GRAND CT");
+          break;
+        case 4:   // The Polar Express
+        case 21:  // Hudson River Ltd
+          dirA = F("NORTHBOUND");
+          dirB = F("SOUTHBOUND");
+          break;
+        case 5:  // Union Pacific R.R.
+          dirA = F("PROMONTORY");
+          dirB = F("OMAHA");
+          break;
+        case 6:  // The Orient Express
+          dirA = F("ISTANBUL");
+          dirB = F("PARIS");
+          break;
+        case 7:   // Broadway Limited
+        case 17:  // Broadway Local
+          dirA = F("THE BRONX");
+          dirB = F("DOWNTOWN");
+          break;
+        case 8:  // The Silver Streak
+          dirA = F("LOS ANG");
+          dirB = F("CHICAGO");
+          break;
+        case 9:  // The B&O Railroad
+          dirA = F("WASH DC");
+          dirB = F("JERSEY CT");
+          break;
+        case 10:  // The Flying Rocket
+          dirA = F("ROCK ISL");
+          dirB = F("CHICAGO");
+          break;
+        case 11:  // Grand Central Line
+          dirA = F("NEW HAVEN");
+          dirB = F("GRAND CT");
+          break;
+        case 12:  // Flying Scotsman
+          dirA = F("EDINBURGH");
+          dirB = F("LONDON");
+          break;
+        case 13:  // Cannonball Express
+          dirA = F("ILLINOIS");
+          dirB = F("NEW ORL");
+          break;
+        case 14:  // The Blue Comet
+          dirA = F("JERSEY CT");
+          dirB = F("ATLANTIC CY");
+          break;
+        case 15:  // Taking Pelham 123
+          dirA = F("PELHAM BAY");
+          dirB = F("SOUTH FERRY");
+          break;
+        case 16:  // Vanderbilt Central
+          dirA = F("UPSTATE");
+          dirB = F("GRAND CT");
+          break;
+        case 18:  // The Circle Line
+          dirA = F("CLOCKWISE");
+          dirB = F("COUNTER CW");
+          break;
+        case 19:  // Empire State Exp
+        case 22:  // 20th Century Ltd
+          dirA = F("CHICAGO");
+          dirB = F("NEW YORK");
+          break;
+        case 20:  // The Great Ghan
+          dirA = F("ADELAIDE");
+          dirB = F("DARWIN");
+          break;
+        case 23:  // Thomas & Friends
+          dirA = F("KNAPFORD");
+          dirB = F("FARQUHAR");
+          break;
+        case 24:  // The Bullet Train
+          dirA = F("TOKYO");
+          dirB = F("OSAKA");
+          break;
+        case 25:  // Chattanooga Choo
+          dirA = F("TENNESSEE");
+          dirB = F("PENN STA");
+          break;
+        case 26:  // Snowpiercer
+          dirA = F("THE ENGINE");
+          dirB = F("THE TAIL");
+          break;
+
+        default:  // Handle generic equipment types
+          if (currentRoute.equipment == FREIGHT) {
+            dirA = F("HEAVY HAUL");
+            dirB = F("RETURN RUN");
+          } else if (currentRoute.equipment == SHUTTLE) {
+            dirA = F("CROSSTOWN");
+            dirB = F("INTERURBAN");
+          } else if (currentRoute.service == UNPREDICTABLE) {
+            dirA = F("INBOUND");
+            dirB = F("OUTBOUND");
+          } else {
+            dirA = F("UPTOWN");
+            dirB = F("DOWNTOWN");
+          }
+          break;
       }
 
-      statusStr = lastDirection ? dirA : dirB;
+      char routeBuffer[20];  // 20 chars is plenty for "SOUTHBOUND"
+      if (lastDirection) {
+        strncpy_P(routeBuffer, (PGM_P)dirA, sizeof(routeBuffer) - 1);
+      } else {
+        strncpy_P(routeBuffer, (PGM_P)dirB, sizeof(routeBuffer) - 1);
+      }
+      routeBuffer[sizeof(routeBuffer) - 1] = '\0';
+      statusStr = routeBuffer;
     }
 
     u8g2.setFont(u8g2_font_7x13_tr);
