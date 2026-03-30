@@ -21,7 +21,7 @@
 struct Persist {
   byte version;
   unsigned long circuitLoopMs;
-  bool calibrateAtStartup;
+  //bool calibrateAtStartup;
   // unsigned long snoozingMinutes;
   // long stationCenterOffset;
 };
@@ -58,17 +58,17 @@ const int STN4_PIN = A4;
 const int MAX_SPEED = 255;
 const int DOCKING_SPEED = 165;
 const int RAMP_STEP = 10;
-const float MAX_MPH = 72.0;
+const float MAX_MPH = 74.0;
 
 // ----- station stop -------
 unsigned long circuitLoopMs = 0;
 
-long trailingEdgeOffset = 800;
-long stationCenterOffset = 400;
+long trailingEdgeOffset = 1990;
+long stationCenterOffset = 780;
 
 // ------- station ---------
 bool sensorEnabled = true;
-bool calibrateAtStartup = false;
+bool calibrateAtStartup = true;
 volatile bool calibrating = false;
 bool hasCalibrated = false;
 bool stationArmed = false;
@@ -76,9 +76,9 @@ unsigned long stationTick = 0;
 unsigned long snoozingMinutes = 5;  // 20 and Never
 
 // ----- dip behavior -----
-const int DIP_SPEED = MAX_SPEED * 3.6 / 10;  // 25MPH
-// const int DIP_SPEED = MAX_SPEED * 4.9 / 10;  // 35MPH
-const unsigned long DIP_TIME = 3600;  // ms per dip
+const int DIP_SPEED = MAX_SPEED * 3.6 / 10;       // 25MPH
+const int DIP_SPEED_FAST = MAX_SPEED * 4.9 / 10;  // 35MPH
+const unsigned long DIP_TIME = 3600;              // ms per dip
 
 // -------- display --------
 bool isMPH = true;
@@ -187,16 +187,24 @@ void manualControlLoop() {
   while (true) {
     updateStationLights();
     long pos = speedKnob.read() / 4;
-    if (delta < 0) {
-      if (globalCurrentSpeed == 0) {
-        signalRed();
+
+    if (globalCurrentSpeed == 0) {
+      if (millis() - snoozeTime < (snoozingMinutes * 60 * 1000)) {
+        if (delta < 0) {
+          if (globalCurrentSpeed == 0) {
+            signalRed();
+          } else {
+            signalYellow();
+          }
+        } else if (delta > 0) {
+          signalGreen();
+        } else {
+          signalRed();
+        }
       } else {
-        signalYellow();
+        signalOff();
+        stationLightsOff();
       }
-    } else if (delta > 0) {
-      signalGreen();
-    } else {
-      signalRed();
     }
 
     if (currentStationState == CRUISING) {
@@ -245,14 +253,6 @@ void manualControlLoop() {
       draw();
     }
 
-    if (globalCurrentSpeed == 0) {
-      if (millis() - snoozeTime < (snoozingMinutes * 60 * 1000)) signalRed();
-      else {
-        signalOff();
-        stationLightsOff();
-      }
-    }
-
     static unsigned long lastPress = 0;
     if (digitalRead(buttonPin) == LOW) {
       if (millis() - lastPress > 250) {
@@ -298,7 +298,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
         updateStationLights();
         readEncoderStep();
       }
-      rampSpeed(DIP_SPEED);
+      rampSpeed(random(DIP_SPEED, DIP_SPEED_FAST));
       Serial.print("🟡 SLOW LEG ⏱ ");
       Serial.print(DIP_TIME / 1000);
       Serial.println("s");
@@ -655,7 +655,7 @@ void calibrateTrain() {
   Persist p;
   p.version = EEPROM_VERSION;
   p.circuitLoopMs = lapRev;
-  p.calibrateAtStartup = calibrateAtStartup;
+  //p.calibrateAtStartup = calibrateAtStartup;
   // p.snoozingMinutes = snoozingMinutes;
 
   EEPROM.put(0, p);  // Write to EEPROM
@@ -671,7 +671,7 @@ void loadFromEEPROM() {
 
   if (p.version == EEPROM_VERSION) {
     circuitLoopMs = p.circuitLoopMs;
-    calibrateAtStartup = p.calibrateAtStartup;
+    //calibrateAtStartup = p.calibrateAtStartup;
     // snoozingMinutes = p.snoozingMinutes;
   }
 }
@@ -737,7 +737,7 @@ unsigned long measureLap(bool forward) {
   }
   writeMotor(forward, 0);
   globalCurrentSpeed = 0;
-
+  
   return lap;
 }
 
@@ -746,7 +746,7 @@ void saveToEEPROM() {
   Persist p;
   p.version = EEPROM_VERSION;
   p.circuitLoopMs = circuitLoopMs;
-  p.calibrateAtStartup = calibrateAtStartup;
+  //p.calibrateAtStartup = calibrateAtStartup;
   // p.stationCenterOffset = stationCenterOffset;
 
   EEPROM.put(0, p);  // Write the calibration data to EEPROM
@@ -999,7 +999,7 @@ void draw() {
           break;
         case 3:  // Reading Railroad
           dirA = F("PENN STA");
-          dirB = F("GRAND CT");
+          dirB = F("GRAND CTRL");
           break;
         case 4:   // The Polar Express
         case 21:  // Hudson River Ltd
@@ -1033,7 +1033,7 @@ void draw() {
           break;
         case 11:  // Grand Central Line
           dirA = F("NEW HAVEN");
-          dirB = F("GRAND CT");
+          dirB = F("GRAND CTRL");
           break;
         case 12:  // Flying Scotsman
           dirA = F("EDINBURGH");
@@ -1053,7 +1053,7 @@ void draw() {
           break;
         case 16:  // Vanderbilt Central
           dirA = F("UPSTATE");
-          dirB = F("GRAND CT");
+          dirB = F("GRAND CTRL");
           break;
         case 18:  // The Circle Line
           dirA = F("CLOCKWISE");
@@ -1198,7 +1198,7 @@ void loop() {
 
   if (restartRequested) {
     restartRequested = false;
-    rampSpeed(0);
+    rampSpeed(MAX_SPEED);
     runRoute(currentRouteIndex);
     return;
   }
