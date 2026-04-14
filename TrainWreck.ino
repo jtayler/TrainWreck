@@ -63,17 +63,17 @@ const float MAX_MPH = 74.0;
 // ----- station stop -------
 unsigned long circuitLoopMs = 0;
 
-long trailingEdgeOffset = 1990;
-long stationCenterOffset = 780;
+long trailingEdgeOffset = 550;
+long stationCenterOffset = 300;
+bool calibrateAtStartup = false;
+unsigned long snoozingMinutes = 20;  // 20 and Never
 
-// ------- station ---------
+// ------- calibration ---------
 bool sensorEnabled = true;
-bool calibrateAtStartup = true;
 volatile bool calibrating = false;
 bool hasCalibrated = false;
 bool stationArmed = false;
 unsigned long stationTick = 0;
-unsigned long snoozingMinutes = 5;  // 20 and Never
 
 // ----- dip behavior -----
 const int DIP_SPEED = MAX_SPEED * 3.6 / 10;       // 25MPH
@@ -188,6 +188,18 @@ void manualControlLoop() {
     updateStationLights();
     long pos = speedKnob.read() / 4;
 
+    if (currentStationState == CRUISING) {
+      if (globalCurrentSpeed == 0) {
+        setStationState(AT_STATION);
+      } else if (delta < 0 && globalCurrentSpeed < DOCKING_SPEED) {
+        setStationState(ARRIVING);
+      }
+    } else if (currentStationState == AT_STATION) {
+      if (delta > 0 && globalCurrentSpeed > 0) {
+        setStationState(DEPARTING);
+      }
+    }
+
     if (globalCurrentSpeed == 0) {
       if (millis() - snoozeTime < (snoozingMinutes * 60 * 1000)) {
         if (delta < 0) {
@@ -203,22 +215,10 @@ void manualControlLoop() {
         }
       } else {
         signalOff();
+        setStationState(CRUISING);
         stationLightsOff();
       }
     }
-
-    if (currentStationState == CRUISING) {
-      if (globalCurrentSpeed == 0) {
-        setStationState(AT_STATION);
-      } else if (delta < 0 && globalCurrentSpeed < DOCKING_SPEED) {
-        setStationState(ARRIVING);
-      }
-    } else if (currentStationState == AT_STATION) {
-      if (delta > 0 && globalCurrentSpeed > 0) {
-        setStationState(DEPARTING);
-      }
-    }
-
     if (pos != lastPos) {
       long oldPos = lastPos;
       lastPos = pos;
@@ -227,11 +227,11 @@ void manualControlLoop() {
       int magnitude = abs(delta);
 
       int step = 2;
-      if (magnitude > 1) step = 11;
-      if (magnitude > 2) step = 17;
-      if (magnitude > 3) step = 26;
-      if (magnitude > 4) step = 31;
-      if (magnitude > 5) step = 38;
+      if (magnitude > 1) step = 8;
+      if (magnitude > 2) step = 15;
+      if (magnitude > 3) step = 28;
+      if (magnitude > 4) step = 36;
+      if (magnitude > 5) step = 45;
 
       if (delta != 0) {
         globalCurrentSpeed += (delta > 0 ? step : -step);
@@ -405,10 +405,10 @@ void updateTafficSignal(int speed, bool rampUp) {
 
 // -------- lights --------
 
-const unsigned long ARRIVE_BLINK_MS = 3000;
-const unsigned long DEPART_BLINK_MS = 4000;
-const unsigned long HOLD_AFTER_LEAVE = 3000;
-const unsigned long FADE_MS = 4000;
+const unsigned long ARRIVE_BLINK_MS = 4000;
+const unsigned long DEPART_BLINK_MS = 12000;
+const unsigned long HOLD_AFTER_LEAVE = 8000;
+const unsigned long FADE_MS = 6000;
 
 void stationLightsOff() {
   digitalWrite(STN1_PIN, LOW);
@@ -737,7 +737,7 @@ unsigned long measureLap(bool forward) {
   }
   writeMotor(forward, 0);
   globalCurrentSpeed = 0;
-  
+
   return lap;
 }
 
