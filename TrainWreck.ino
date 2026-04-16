@@ -21,7 +21,7 @@
 struct Persist {
   byte version;
   unsigned long circuitLoopMs;
-  //bool calibrateAtStartup;
+  bool calibrateAtStartup;
   // unsigned long snoozingMinutes;
   // long stationCenterOffset;
 };
@@ -65,7 +65,7 @@ unsigned long circuitLoopMs = 0;
 
 long trailingEdgeOffset = 550;
 long stationCenterOffset = 300;
-bool calibrateAtStartup = false;
+bool calibrateAtStartup = true;
 unsigned long snoozingMinutes = 20;  // 20 and Never
 
 // ------- calibration ---------
@@ -183,6 +183,8 @@ void manualControlLoop() {
   snprintf(line3, sizeof(line3), "MANUAL CONTROL");
 
   static unsigned long snoozeTime = 0;
+  snoozeTime = millis();  // seed on entry — prevent false snooze trigger
+  delta = 0;              // clear stale direction from prior session
 
   while (true) {
     updateStationLights();
@@ -247,6 +249,10 @@ void manualControlLoop() {
       if (globalCurrentSpeed > 0) {
         snoozeTime = 0;
       }
+
+      if (globalCurrentSpeed == 0) signalRed();
+      else if (delta < 0) signalYellow();
+      else signalGreen();
 
       writeMotor(lastDirection, globalCurrentSpeed);
       snprintf(line2, sizeof(line2), "%d %s", speedToMph(globalCurrentSpeed), perHourName());
@@ -655,7 +661,7 @@ void calibrateTrain() {
   Persist p;
   p.version = EEPROM_VERSION;
   p.circuitLoopMs = lapRev;
-  //p.calibrateAtStartup = calibrateAtStartup;
+  p.calibrateAtStartup = calibrateAtStartup;
   // p.snoozingMinutes = snoozingMinutes;
 
   EEPROM.put(0, p);  // Write to EEPROM
@@ -671,7 +677,7 @@ void loadFromEEPROM() {
 
   if (p.version == EEPROM_VERSION) {
     circuitLoopMs = p.circuitLoopMs;
-    //calibrateAtStartup = p.calibrateAtStartup;
+    calibrateAtStartup = p.calibrateAtStartup;
     // snoozingMinutes = p.snoozingMinutes;
   }
 }
@@ -746,7 +752,7 @@ void saveToEEPROM() {
   Persist p;
   p.version = EEPROM_VERSION;
   p.circuitLoopMs = circuitLoopMs;
-  //p.calibrateAtStartup = calibrateAtStartup;
+  p.calibrateAtStartup = calibrateAtStartup;
   // p.stationCenterOffset = stationCenterOffset;
 
   EEPROM.put(0, p);  // Write the calibration data to EEPROM
