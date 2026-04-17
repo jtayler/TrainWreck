@@ -21,7 +21,6 @@
 struct Persist {
   byte version;
   unsigned long circuitLoopMs;
-  bool calibrateAtStartup;
   // unsigned long snoozingMinutes;
   // long stationCenterOffset;
 };
@@ -661,7 +660,6 @@ void calibrateTrain() {
   Persist p;
   p.version = EEPROM_VERSION;
   p.circuitLoopMs = lapRev;
-  p.calibrateAtStartup = calibrateAtStartup;
   // p.snoozingMinutes = snoozingMinutes;
 
   EEPROM.put(0, p);  // Write to EEPROM
@@ -677,7 +675,6 @@ void loadFromEEPROM() {
 
   if (p.version == EEPROM_VERSION) {
     circuitLoopMs = p.circuitLoopMs;
-    calibrateAtStartup = p.calibrateAtStartup;
     // snoozingMinutes = p.snoozingMinutes;
   }
 }
@@ -752,7 +749,6 @@ void saveToEEPROM() {
   Persist p;
   p.version = EEPROM_VERSION;
   p.circuitLoopMs = circuitLoopMs;
-  p.calibrateAtStartup = calibrateAtStartup;
   // p.stationCenterOffset = stationCenterOffset;
 
   EEPROM.put(0, p);  // Write the calibration data to EEPROM
@@ -853,7 +849,7 @@ const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
   { 23, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL }     // Thomas & Friends
 };
 
-const int USER_ROUTES[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 };
+const int USER_ROUTES[] = { 1, 2, 4, 6, 7, 8, 12, 13, 15, 18, 19, 20, 22, 23 };  // trimmed for Nano flash — restore in RailOS 2
 const int ROUTE_COUNT = sizeof(USER_ROUTES) / sizeof(USER_ROUTES[0]);
 
 struct OperatingState {
@@ -1003,18 +999,10 @@ void draw() {
           dirA = F("SAN FRAN");
           dirB = F("CHICAGO");
           break;
-        case 3:  // Reading Railroad
-          dirA = F("PENN STA");
-          dirB = F("GRAND CTRL");
-          break;
         case 4:   // The Polar Express
         case 21:  // Hudson River Ltd
           dirA = F("NORTHBOUND");
           dirB = F("SOUTHBOUND");
-          break;
-        case 5:  // Union Pacific R.R.
-          dirA = F("PROMONTORY");
-          dirB = F("OMAHA");
           break;
         case 6:  // The Orient Express
           dirA = F("ISTANBUL");
@@ -1029,18 +1017,6 @@ void draw() {
           dirA = F("LOS ANG");
           dirB = F("CHICAGO");
           break;
-        case 9:  // The B&O Railroad
-          dirA = F("WASH DC");
-          dirB = F("JERSEY CT");
-          break;
-        case 10:  // The Flying Rocket
-          dirA = F("ROCK ISL");
-          dirB = F("CHICAGO");
-          break;
-        case 11:  // Grand Central Line
-          dirA = F("NEW HAVEN");
-          dirB = F("GRAND CTRL");
-          break;
         case 12:  // Flying Scotsman
           dirA = F("EDINBURGH");
           dirB = F("LONDON");
@@ -1049,17 +1025,9 @@ void draw() {
           dirA = F("ILLINOIS");
           dirB = F("NEW ORL");
           break;
-        case 14:  // The Blue Comet
-          dirA = F("JERSEY CT");
-          dirB = F("ATLANTIC CY");
-          break;
         case 15:  // Taking Pelham 123
           dirA = F("PELHAM BAY");
           dirB = F("SOUTH FERRY");
-          break;
-        case 16:  // Vanderbilt Central
-          dirA = F("UPSTATE");
-          dirB = F("GRAND CTRL");
           break;
         case 18:  // The Circle Line
           dirA = F("CLOCKWISE");
