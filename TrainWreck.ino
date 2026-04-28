@@ -16,13 +16,13 @@
 
 // --- persistence store ---
 
-#define EEPROM_VERSION 1
+#define EEPROM_VERSION 5
 
 struct Persist {
   byte version;
   unsigned long circuitLoopMs;
-  // unsigned long snoozingMinutes;
-  // long stationCenterOffset;
+  unsigned long rampDownMs;
+  uint8_t lastRouteIndex;
 };
 
 // --- display driver ---
@@ -62,8 +62,8 @@ const float MAX_MPH = 74.0;
 // ----- station stop -------
 unsigned long circuitLoopMs = 0;
 
-long trailingEdgeOffset = 550;
-long stationCenterOffset = 300;
+long stationDist = 3200;     // ms clockwise from sensor to station at DOCKING_SPEED (tune once)
+unsigned long rampDownMs = 0; // measured during calibration
 bool calibrateAtStartup = true;
 unsigned long snoozingMinutes = 20;  // 20 and Never
 
@@ -149,7 +149,6 @@ void readEncoderStep() {
       restartRequested = true;
       abortRoute = true;
       stationArmed = false;
-      Serial.println("REQUEST MANUAL (knob)");
     }
 
     lastPos = pos;
@@ -166,10 +165,8 @@ void readEncoderStep() {
       if (mode == MANUAL) {
         if (manualLocked) {
           manualLocked = false;
-          Serial.println("MANUAL LOCK OFF");
         } else {
           manualLocked = true;
-          Serial.println("MANUAL LOCK ON");
         }
       }
     }
@@ -178,7 +175,6 @@ void readEncoderStep() {
 static long delta = 0;
 
 void manualControlLoop() {
-  Serial.println("ENTER MANUAL");
   snprintf(line3, sizeof(line3), "MANUAL CONTROL");
 
   static unsigned long snoozeTime = 0;
@@ -246,7 +242,7 @@ void manualControlLoop() {
       }
 
       if (globalCurrentSpeed > 0) {
-        snoozeTime = 0;
+        snoozeTime = millis();
       }
 
       if (globalCurrentSpeed == 0) signalRed();
@@ -264,7 +260,6 @@ void manualControlLoop() {
         lastPress = millis();
         snprintf(line3, sizeof(line3), "EXIT MANUAL");
         draw();
-        Serial.println("EXIT MANUAL");
         break;
       }
     }
@@ -279,7 +274,6 @@ void manualControlLoop() {
 bool currentDirection = true;
 
 void go(bool forward, int speed, unsigned long runTime, int dipCount) {
-  Serial.println("GO!");
   if (abortRoute) return;
 
   unsigned long pauseTime = random(6, 20);
@@ -290,27 +284,18 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
     unsigned long segment = (runTime * 1000) / (dipCount + 1);
     for (int i = 0; i < dipCount; i++) {
       if (abortRoute) return;
-      Serial.print("🟢 FAST LEG ⏱ ");
-      Serial.print(segment / 1000);
-      Serial.println("s");
-      const char* msg;
       unsigned long legStartTime = millis();
       while (millis() - legStartTime < segment) {
         if (abortRoute) return;
-
         snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
         draw();
         updateStationLights();
         readEncoderStep();
       }
       rampSpeed(random(DIP_SPEED, DIP_SPEED_FAST));
-      Serial.print("🟡 SLOW LEG ⏱ ");
-      Serial.print(DIP_TIME / 1000);
-      Serial.println("s");
       unsigned long dipStartTime = millis();
       while (millis() - dipStartTime < DIP_TIME) {
         if (abortRoute) return;
-
         snprintf(line3, sizeof(line3), "%s %ds", "SLOW LEG", DIP_TIME / 1000);
         draw();
         updateStationLights();
@@ -318,35 +303,24 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
       }
       rampSpeed(random(speed * 0.85, speed));
     }
-    Serial.print("🟢 FAST LEG ⏱ ");
-    Serial.print(segment / 1000);
-    Serial.println("s");
     unsigned long segmentStartTime = millis();
     while (millis() - segmentStartTime < segment) {
       if (abortRoute) return;
-
       snprintf(line3, sizeof(line3), "%s %ds", "FAST LEG", segment / 1000);
       draw();
       updateStationLights();
       readEncoderStep();
     }
   } else {
-    Serial.print("🟢 ONLY LEG ⏱ ");
-    Serial.print(runTime);
-    Serial.println("s");
     unsigned long onlyStartTime = millis();
     while (millis() - onlyStartTime < runTime * 1000) {
       if (abortRoute) return;
-
       snprintf(line3, sizeof(line3), "%s %ds", "ONLY LEG", runTime);
       draw();
       updateStationLights();
       readEncoderStep();
     }
   }
-  Serial.print("🛑 STOP ⏱ ");
-  Serial.print(pauseTime);
-  Serial.println("s");
   readEncoderStep();
 
   rampSpeed(0);
@@ -585,7 +559,6 @@ void rampSpeed(int target) {
     }
     if (sensorEnabled && target == 0 && !dockedThisStop) {
       if (current <= DOCKING_SPEED) {
-        Serial.println("WAITING FOR STATION EDGE");
         snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
         draw();
         while (!stationArmed) {
@@ -609,7 +582,8 @@ void rampSpeed(int target) {
         }
         setStationState(AT_STATION);
         dockedThisStop = true;
-        Serial.println("DOCKING INITIATED");
+        start = current;
+        delta = current;
       }
     }
     // ---- S-CURVE RAMP ----
@@ -650,41 +624,43 @@ void rampSpeed(int target) {
 }
 
 // -------- calibrate --------
-// Calibration function
 void calibrateTrain() {
-  unsigned long lapFwd = 0;
   snprintf(line1, sizeof(line1), "CALIBRATION");
   draw();
-  unsigned long lapRev = measureLap(false);
+  circuitLoopMs = measureLap(false);  // also sets rampDownMs
 
   Persist p;
   p.version = EEPROM_VERSION;
-  p.circuitLoopMs = lapRev;
-  // p.snoozingMinutes = snoozingMinutes;
+  p.circuitLoopMs = circuitLoopMs;
+  p.rampDownMs = rampDownMs;
+  p.lastRouteIndex = currentRouteIndex;
+  EEPROM.put(0, p);
 
-  EEPROM.put(0, p);  // Write to EEPROM
-
-  // Log results
-  Serial.print("REV Loop Time: ");
-  Serial.println(p.circuitLoopMs);
+  Serial.print("Loop ms: "); Serial.println(circuitLoopMs);
+  Serial.print("Ramp ms: "); Serial.println(rampDownMs);
+  calculateStationPause(true);
+  calculateStationPause(false);
 }
 
 void loadFromEEPROM() {
   Persist p;
   EEPROM.get(0, p);
-
   if (p.version == EEPROM_VERSION) {
     circuitLoopMs = p.circuitLoopMs;
-    // snoozingMinutes = p.snoozingMinutes;
+    rampDownMs = p.rampDownMs;
+    currentRouteIndex = p.lastRouteIndex;
   }
 }
 
 unsigned long calculateStationPause(bool forward) {
-  if (forward) {
-    return stationCenterOffset;
-  } else {
-    return ((circuitLoopMs * 0.5) + trailingEdgeOffset - stationCenterOffset);
-  }
+  long rampDist = (long)rampDownMs / 2;
+  long coast = forward
+    ? stationDist - rampDist
+    : (long)circuitLoopMs - stationDist - rampDist;
+  unsigned long result = (unsigned long)max(0L, coast);
+  Serial.print(forward ? "FWD" : "REV");
+  Serial.print(" coast="); Serial.println(result);
+  return result;
 }
 // Function to measure lap time
 unsigned long measureLap(bool forward) {
@@ -731,134 +707,93 @@ unsigned long measureLap(bool forward) {
   draw();
 
   unsigned long lap = millis() - start;
-  for (int s = DOCKING_SPEED; s >= 0; s -= 6) {
-    snprintf(line2, sizeof(line2), "%d %s", speedToMph(globalCurrentSpeed), perHourName());
 
-    draw();
-    writeMotor(forward, s);
-    globalCurrentSpeed = s;
-  }
-  writeMotor(forward, 0);
-  globalCurrentSpeed = 0;
+  snprintf(line3, sizeof(line3), "RAMP");
+  bool wasSensor = sensorEnabled;
+  sensorEnabled = false;
+  unsigned long rampStart = millis();
+  rampSpeed(0);
+  rampDownMs = millis() - rampStart;
+  sensorEnabled = wasSensor;
 
   return lap;
 }
 
-// Save calibration values to EEPROM
-void saveToEEPROM() {
-  Persist p;
-  p.version = EEPROM_VERSION;
-  p.circuitLoopMs = circuitLoopMs;
-  // p.stationCenterOffset = stationCenterOffset;
 
-  EEPROM.put(0, p);  // Write the calibration data to EEPROM
-}
+// -------- route strings (PROGMEM) --------
+const char rt_pelham[]   PROGMEM = "Taking Pelham 123";
+const char rt_hogwarts[] PROGMEM = "Hogwarts Express";
+const char rt_zephyr[]   PROGMEM = "California Zephyr";
+const char rt_polar[]    PROGMEM = "The Polar Express";
+const char rt_orient[]   PROGMEM = "The Orient Express";
+const char rt_broadway[] PROGMEM = "Broadway Limited";
+const char rt_silver[]   PROGMEM = "The Silver Streak";
+const char rt_scotsman[] PROGMEM = "Flying Scotsman";
+const char rt_cannon[]   PROGMEM = "Cannonball Express";
+const char rt_circle[]   PROGMEM = "The Circle Line";
+const char rt_empire[]   PROGMEM = "Empire State Exp";
+const char rt_ghan[]     PROGMEM = "The Great Ghan";
+const char rt_century[]  PROGMEM = "20th Century Ltd";
+const char rt_thomas[]   PROGMEM = "Thomas & Friends";
 
-const char l0[] PROGMEM = "Pennsylvania Line";
-const char l1[] PROGMEM = "Hogwarts Express";
-const char l2[] PROGMEM = "California Zephyr";
-const char l3[] PROGMEM = "Reading Railroad";
-const char l4[] PROGMEM = "The Polar Express";
-const char l5[] PROGMEM = "Union Pacific R.R.";
-const char l6[] PROGMEM = "The Orient Express";
-const char l7[] PROGMEM = "Broadway Limited";
-const char l8[] PROGMEM = "The Silver Streak";
-const char l9[] PROGMEM = "The B&O Railroad";
-const char l10[] PROGMEM = "The Flying Rocket";
-const char l11[] PROGMEM = "Grand Central Line";
-const char l12[] PROGMEM = "Flying Scotsman";
-const char l13[] PROGMEM = "Cannonball Express";
-const char l14[] PROGMEM = "The Blue Comet";
-const char l15[] PROGMEM = "Taking Pelham 123";
-const char l16[] PROGMEM = "Vanderbilt Central";
-const char l17[] PROGMEM = "Broadway Local";
-const char l18[] PROGMEM = "The Circle Line";
-const char l19[] PROGMEM = "Empire State Exp";
-const char l20[] PROGMEM = "The Great Ghan";
-const char l21[] PROGMEM = "Hudson River Ltd";
-const char l22[] PROGMEM = "20th Century Ltd";
-const char l23[] PROGMEM = "Thomas & Friends";
+const char dir_pelbay[]  PROGMEM = "PELHAM BAY";
+const char dir_sferry[]  PROGMEM = "SOUTH FERRY";
+const char dir_hogs[]    PROGMEM = "HOGSMEADE";
+const char dir_london[]  PROGMEM = "LONDON";
+const char dir_sanfran[] PROGMEM = "SAN FRAN";
+const char dir_chicago[] PROGMEM = "CHICAGO";
+const char dir_north[]   PROGMEM = "NORTHBOUND";
+const char dir_south[]   PROGMEM = "SOUTHBOUND";
+const char dir_istanbul[]PROGMEM = "ISTANBUL";
+const char dir_paris[]   PROGMEM = "PARIS";
+const char dir_bronx[]   PROGMEM = "THE BRONX";
+const char dir_dtown[]   PROGMEM = "DOWNTOWN";
+const char dir_losang[]  PROGMEM = "LOS ANG";
+const char dir_edinb[]   PROGMEM = "EDINBURGH";
+const char dir_illinois[]PROGMEM = "ILLINOIS";
+const char dir_neworl[]  PROGMEM = "NEW ORL";
+const char dir_cw[]      PROGMEM = "CLOCKWISE";
+const char dir_ccw[]     PROGMEM = "COUNTER CW";
+const char dir_newyork[] PROGMEM = "NEW YORK";
+const char dir_adelaide[]PROGMEM = "ADELAIDE";
+const char dir_darwin[]  PROGMEM = "DARWIN";
+const char dir_knapford[]PROGMEM = "KNAPFORD";
+const char dir_farquhar[]PROGMEM = "FARQUHAR";
 
-const char l26[] PROGMEM = "Snowpiercer";
-const char l27[] PROGMEM = "Trans-Siberian";
-const char l28[] PROGMEM = "The Starlight Exp";
-
-enum Schedule {
-  HIGH_FREQ,
-  PEAK,
-  OFF_PEAK
-};
-
-enum Equipment {
-  BULLET,
-  SHUTTLE,
-  FREIGHT
-};
-
-enum Service {
-  NONSTOP,
-  LIMITED,
-  UNPREDICTABLE
-};
-
-enum Range {
-  LOCAL,
-  SHORT_RUN,
-  LONG_HAUL
-};
-
-const char* const ROUTES[] PROGMEM = {
-  l0, l1, l2, l3, l4, l5, l6, l7, l8, l9,
-  l10, l11, l12, l13, l14, l15, l16, l17, l18, l19,
-  l20, l21, l22, l23
-};
-const int TITLE_COUNT = sizeof(ROUTES) / sizeof(ROUTES[0]);
+enum Schedule { HIGH_FREQ, PEAK, OFF_PEAK };
+enum Equipment { BULLET, SHUTTLE, FREIGHT };
+enum Service { NONSTOP, LIMITED, UNPREDICTABLE };
+enum Range { LOCAL, SHORT_RUN, LONG_HAUL };
 
 struct RouteProfile {
-  uint8_t titleId;
+  PGM_P title;
+  PGM_P dirA;
+  PGM_P dirB;
   uint8_t schedule;
   uint8_t equipment;
   uint8_t service;
   uint8_t range;
 };
 
+// Each route is self-contained — reorder freely, nothing will break.
+// Pelham is first so it runs first (easy test: should show UPTOWN/DOWNTOWN, not Hogsmeade).
 const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
-  { 0, PEAK, SHUTTLE, LIMITED, SHORT_RUN },            // Pennsylvania Line
-  { 1, HIGH_FREQ, BULLET, NONSTOP, LONG_HAUL },        // Hogwarts Express
-  { 2, PEAK, BULLET, LIMITED, LONG_HAUL },             // California Zephyr
-  { 3, HIGH_FREQ, FREIGHT, LIMITED, LONG_HAUL },       // Reading Railroad
-  { 4, OFF_PEAK, SHUTTLE, UNPREDICTABLE, LONG_HAUL },  // The Polar Express
-  { 5, PEAK, FREIGHT, LIMITED, LONG_HAUL },            // Union Pacific R.R.
-  { 6, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },         // The Orient Express
-  { 7, OFF_PEAK, BULLET, LIMITED, LONG_HAUL },         // Broadway Limited
-  { 8, HIGH_FREQ, BULLET, UNPREDICTABLE, SHORT_RUN },  // The Silver Streak
-  { 9, PEAK, FREIGHT, LIMITED, SHORT_RUN },            // The B&O Railroad
-  { 10, PEAK, BULLET, NONSTOP, SHORT_RUN },            // The Flying Rocket
-  { 11, HIGH_FREQ, SHUTTLE, LIMITED, LOCAL },          // Grand Central Line
-  { 12, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },        // Flying Scotsman
-  { 13, PEAK, BULLET, UNPREDICTABLE, SHORT_RUN },      // Cannonball Express
-  { 14, PEAK, SHUTTLE, LIMITED, SHORT_RUN },           // The Blue Comet
-  { 15, HIGH_FREQ, BULLET, NONSTOP, LOCAL },           // Taking Pelham 123
-  { 16, PEAK, SHUTTLE, LIMITED, LONG_HAUL },           // Vanderbilt Central
-  { 17, PEAK, BULLET, NONSTOP, LONG_HAUL },            // Broadway Local
-  { 18, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL },    // The Circle Line
-  { 19, PEAK, BULLET, NONSTOP, LONG_HAUL },            // Empire State Exp
-  { 20, HIGH_FREQ, SHUTTLE, LIMITED, LONG_HAUL },      // The Great Ghan
-  { 21, PEAK, SHUTTLE, LIMITED, LONG_HAUL },           // Hudson River Ltd
-  { 22, PEAK, BULLET, NONSTOP, LONG_HAUL },            // 20th Century Ltd
-  { 23, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL }     // Thomas & Friends
+  { rt_pelham,   dir_pelbay,  dir_sferry,  HIGH_FREQ, BULLET,  NONSTOP,       LOCAL     },
+  { rt_hogwarts, dir_hogs,    dir_london,  HIGH_FREQ, BULLET,  NONSTOP,       LONG_HAUL },
+  { rt_zephyr,   dir_sanfran, dir_chicago, PEAK,      BULLET,  LIMITED,       LONG_HAUL },
+  { rt_polar,    dir_north,   dir_south,   OFF_PEAK,  SHUTTLE, UNPREDICTABLE, LONG_HAUL },
+  { rt_orient,   dir_istanbul,dir_paris,   OFF_PEAK,  BULLET,  NONSTOP,       LONG_HAUL },
+  { rt_broadway, dir_bronx,   dir_dtown,   OFF_PEAK,  BULLET,  LIMITED,       LONG_HAUL },
+  { rt_silver,   dir_losang,  dir_chicago, HIGH_FREQ, BULLET,  UNPREDICTABLE, SHORT_RUN },
+  { rt_scotsman, dir_edinb,   dir_london,  OFF_PEAK,  BULLET,  NONSTOP,       LONG_HAUL },
+  { rt_cannon,   dir_illinois,dir_neworl,  PEAK,      BULLET,  UNPREDICTABLE, SHORT_RUN },
+  { rt_circle,   dir_cw,      dir_ccw,     HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL     },
+  { rt_empire,   dir_chicago, dir_newyork, PEAK,      BULLET,  NONSTOP,       LONG_HAUL },
+  { rt_ghan,     dir_adelaide,dir_darwin,  HIGH_FREQ, SHUTTLE, LIMITED,       LONG_HAUL },
+  { rt_century,  dir_chicago, dir_newyork, PEAK,      BULLET,  NONSTOP,       LONG_HAUL },
+  { rt_thomas,   dir_knapford,dir_farquhar,HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL     },
 };
-
-const int USER_ROUTES[] = { 1, 2, 4, 6, 7, 8, 12, 13, 15, 18, 19, 20, 22, 23 };  // trimmed for Nano flash — restore in RailOS 2
-const int ROUTE_COUNT = sizeof(USER_ROUTES) / sizeof(USER_ROUTES[0]);
-
-struct OperatingState {
-  uint8_t lineId;
-  uint8_t schedule;
-  uint8_t equipment;
-  uint8_t service;
-  uint8_t range;
-};
+const int ROUTE_COUNT = sizeof(ROUTE_DEFAULTS) / sizeof(ROUTE_DEFAULTS[0]);
 
 RouteProfile currentRoute;
 
@@ -876,49 +811,32 @@ bool detectSensor() {
 
 void setup() {
   Serial.begin(115200);
-  Serial.println();
-  Serial.println("Serial Established.");
+  Serial.println("BOOT");
 
   pinMode(in1Pin, OUTPUT);
   pinMode(in2Pin, OUTPUT);
   digitalWrite(in1Pin, LOW);
   digitalWrite(in2Pin, LOW);
-  Serial.println("Motor Controller Pin Modes Set");
 
   pinMode(buttonPin, INPUT_PULLUP);
-  Serial.println("Control Knob Setup.");
 
   pinMode(STN1_PIN, OUTPUT);
   pinMode(STN2_PIN, OUTPUT);
   pinMode(STN3_PIN, OUTPUT);
   pinMode(STN4_PIN, OUTPUT);
-  Serial.println("Station Lights Setup.");
 
   pinMode(RED_PIN, OUTPUT);
   pinMode(YEL_PIN, OUTPUT);
   pinMode(GRN_PIN, OUTPUT);
-  Serial.println("Traffic Lights Setup.");
 
   loadFromEEPROM();
-  Serial.println("EPROM Loaded.");
-
   u8g2.begin();
   u8g2.clearBuffer();
-  Serial.println("Display Driver Initialized.");
-
-  Serial.println("Splash.");
   splashScreen();
-  Serial.println("Detect Sensor.");
 
   pinMode(IR_PIN, INPUT);
   sensorEnabled = detectSensor();
-  if (sensorEnabled) {
-    Serial.println("IR Sensor Detected.");
-  } else {
-    Serial.println("IR Sensor Disabled.");
-  }
-
-  Serial.println("BOOT");
+  Serial.println(sensorEnabled ? "IR OK" : "IR OFF");
 }
 
 void splashScreen() {
@@ -982,106 +900,8 @@ void draw() {
     if (globalCurrentSpeed == 0) {
       statusStr = "HALTED";
     } else {
-      // Declare these at the top of your function
-      const __FlashStringHelper* dirA;
-      const __FlashStringHelper* dirB;
-
-      switch (currentRoute.titleId) {
-        case 0:  // Pennsylvania Line
-          dirA = F("PHILLY");
-          dirB = F("PENN STA");
-          break;
-        case 1:  // Hogwarts Express
-          dirA = F("HOGSMEADE");
-          dirB = F("LONDON");
-          break;
-        case 2:  // California Zephyr
-          dirA = F("SAN FRAN");
-          dirB = F("CHICAGO");
-          break;
-        case 4:   // The Polar Express
-        case 21:  // Hudson River Ltd
-          dirA = F("NORTHBOUND");
-          dirB = F("SOUTHBOUND");
-          break;
-        case 6:  // The Orient Express
-          dirA = F("ISTANBUL");
-          dirB = F("PARIS");
-          break;
-        case 7:   // Broadway Limited
-        case 17:  // Broadway Local
-          dirA = F("THE BRONX");
-          dirB = F("DOWNTOWN");
-          break;
-        case 8:  // The Silver Streak
-          dirA = F("LOS ANG");
-          dirB = F("CHICAGO");
-          break;
-        case 12:  // Flying Scotsman
-          dirA = F("EDINBURGH");
-          dirB = F("LONDON");
-          break;
-        case 13:  // Cannonball Express
-          dirA = F("ILLINOIS");
-          dirB = F("NEW ORL");
-          break;
-        case 15:  // Taking Pelham 123
-          dirA = F("PELHAM BAY");
-          dirB = F("SOUTH FERRY");
-          break;
-        case 18:  // The Circle Line
-          dirA = F("CLOCKWISE");
-          dirB = F("COUNTER CW");
-          break;
-        case 19:  // Empire State Exp
-        case 22:  // 20th Century Ltd
-          dirA = F("CHICAGO");
-          dirB = F("NEW YORK");
-          break;
-        case 20:  // The Great Ghan
-          dirA = F("ADELAIDE");
-          dirB = F("DARWIN");
-          break;
-        case 23:  // Thomas & Friends
-          dirA = F("KNAPFORD");
-          dirB = F("FARQUHAR");
-          break;
-        case 24:  // The Bullet Train
-          dirA = F("TOKYO");
-          dirB = F("OSAKA");
-          break;
-        case 25:  // Chattanooga Choo
-          dirA = F("TENNESSEE");
-          dirB = F("PENN STA");
-          break;
-        case 26:  // Snowpiercer
-          dirA = F("THE ENGINE");
-          dirB = F("THE TAIL");
-          break;
-
-        default:  // Handle generic equipment types
-          if (currentRoute.equipment == FREIGHT) {
-            dirA = F("HEAVY HAUL");
-            dirB = F("RETURN RUN");
-          } else if (currentRoute.equipment == SHUTTLE) {
-            dirA = F("CROSSTOWN");
-            dirB = F("INTERURBAN");
-          } else if (currentRoute.service == UNPREDICTABLE) {
-            dirA = F("INBOUND");
-            dirB = F("OUTBOUND");
-          } else {
-            dirA = F("UPTOWN");
-            dirB = F("DOWNTOWN");
-          }
-          break;
-      }
-
-      char routeBuffer[20];  // 20 chars is plenty for "SOUTHBOUND"
-      if (lastDirection) {
-        strncpy_P(routeBuffer, (PGM_P)dirA, sizeof(routeBuffer) - 1);
-      } else {
-        strncpy_P(routeBuffer, (PGM_P)dirB, sizeof(routeBuffer) - 1);
-      }
+      char routeBuffer[20];
+      strncpy_P(routeBuffer, lastDirection ? currentRoute.dirA : currentRoute.dirB, sizeof(routeBuffer) - 1);
       routeBuffer[sizeof(routeBuffer) - 1] = '\0';
       statusStr = routeBuffer;
     }
@@ -1107,20 +927,24 @@ void draw() {
 void runRoutes() {
   for (uint8_t i = 0; i < ROUTE_COUNT; i++) {
     if (abortRoute) return;
-    runRoute(USER_ROUTES[i]);
+    runRoute((currentRouteIndex + i) % ROUTE_COUNT);
   }
-}
-
-void showTitleByTitleId(uint8_t titleId) {
-  if (titleId >= TITLE_COUNT) return;
-  strcpy_P(line1, (char*)pgm_read_word(&(ROUTES[titleId])));
-  draw();
+  currentRouteIndex = 0;
 }
 
 void runRoute(uint8_t index) {
   memcpy_P(&currentRoute, &ROUTE_DEFAULTS[index], sizeof(RouteProfile));
   currentRouteIndex = index;
-  showTitleByTitleId(currentRoute.titleId);
+  strcpy_P(line1, currentRoute.title);
+  draw();
+  {
+    Persist p;
+    EEPROM.get(0, p);
+    if (p.version == EEPROM_VERSION && p.lastRouteIndex != index) {
+      p.lastRouteIndex = index;
+      EEPROM.put(0, p);
+    }
+  }
   // -------- Schedule → legs --------
   uint8_t legs;
   switch (currentRoute.schedule) {
@@ -1180,7 +1004,6 @@ void loop() {
   if (!hasCalibrated && calibrateAtStartup && sensorEnabled) {
     calibrateTrain();
     hasCalibrated = true;
-    Serial.println("Train Calibration Complete.");
     return;
   }
 
