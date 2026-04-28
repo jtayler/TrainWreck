@@ -920,16 +920,14 @@ void draw() {
 
     u8g2.setFont(u8g2_font_ncenB18_tr);
     u8g2.drawStr(55, 48, perHourName());
-    const char* statusStr;
-
-    if (globalCurrentSpeed == 0) {
-      statusStr = "HALTED";
-    } else {
-      char routeBuffer[20];
+    char routeBuffer[20] = "HALTED";
+    if (calibrating) {
+      strncpy(routeBuffer, globalCurrentSpeed == 0 ? "---" : (lastDirection ? "CW" : "CCW"), sizeof(routeBuffer) - 1);
+    } else if (globalCurrentSpeed > 0) {
       strncpy_P(routeBuffer, lastDirection ? currentRoute.dirA : currentRoute.dirB, sizeof(routeBuffer) - 1);
       routeBuffer[sizeof(routeBuffer) - 1] = '\0';
-      statusStr = routeBuffer;
     }
+    const char* statusStr = routeBuffer;
 
     u8g2.setFont(u8g2_font_7x13_tr);
     u8g2.drawStr(
