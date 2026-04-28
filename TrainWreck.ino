@@ -16,12 +16,13 @@
 
 // --- persistence store ---
 
-#define EEPROM_VERSION 5
+#define EEPROM_VERSION 8
 
 struct Persist {
   byte version;
-  unsigned long circuitLoopMs;
   unsigned long rampDownMs;
+  long revStationDist;
+  long stationDist;
   uint8_t lastRouteIndex;
 };
 
@@ -60,11 +61,11 @@ const int RAMP_STEP = 10;
 const float MAX_MPH = 74.0;
 
 // ----- station stop -------
-unsigned long circuitLoopMs = 0;
-
-long stationDist = 3200;     // ms clockwise from sensor to station at DOCKING_SPEED (tune once)
-unsigned long rampDownMs = 0; // measured during calibration
+long stationDist = 2500;     // ms sensor→station clockwise at DOCKING_SPEED (tune once)
+long revStationDist = 0;     // ms sensor→station counter-clockwise — auto-computed at calibration
+unsigned long rampDownMs = 0;
 bool calibrateAtStartup = true;
+bool testStationMode = false;  // true = just loop: go → park → go → park (for tuning)
 unsigned long snoozingMinutes = 20;  // 20 and Never
 
 // ------- calibration ---------
@@ -371,6 +372,7 @@ void signalGreen() {
 }
 
 void updateTafficSignal(int speed, bool rampUp) {
+  if (calibrating) return;
   if (speed == 0) {
     signalRed();
     return;
@@ -463,6 +465,7 @@ void setStationState(StationState s) {
 }
 
 void updateStationLights() {
+  if (calibrating) return;
   unsigned long elapsed = millis() - stateStartTime;
 
   switch (currentStationState) {
@@ -625,38 +628,47 @@ void rampSpeed(int target) {
 
 // -------- calibrate --------
 void calibrateTrain() {
+  calibrating = true;
+  signalOff();
+  stationLightsOff();
   snprintf(line1, sizeof(line1), "CALIBRATION");
   draw();
-  circuitLoopMs = measureLap(false);  // also sets rampDownMs
+  unsigned long lapFwd = measureLap(true);
+  unsigned long lapRev = measureLap(false);
+  if (lapFwd > 0) {
+    revStationDist = ((long)lapRev * (long)((long)lapFwd - stationDist)) / (long)lapFwd;
+  }
 
   Persist p;
   p.version = EEPROM_VERSION;
-  p.circuitLoopMs = circuitLoopMs;
   p.rampDownMs = rampDownMs;
+  p.revStationDist = revStationDist;
+  p.stationDist = stationDist;
   p.lastRouteIndex = currentRouteIndex;
   EEPROM.put(0, p);
 
-  Serial.print("Loop ms: "); Serial.println(circuitLoopMs);
+  Serial.print("FWD lap ms: "); Serial.println(lapFwd);
+  Serial.print("REV lap ms: "); Serial.println(lapRev);
   Serial.print("Ramp ms: "); Serial.println(rampDownMs);
   calculateStationPause(true);
   calculateStationPause(false);
+  calibrating = false;
 }
 
 void loadFromEEPROM() {
   Persist p;
   EEPROM.get(0, p);
   if (p.version == EEPROM_VERSION) {
-    circuitLoopMs = p.circuitLoopMs;
     rampDownMs = p.rampDownMs;
+    revStationDist = p.revStationDist;
+    stationDist = p.stationDist;
     currentRouteIndex = p.lastRouteIndex;
   }
 }
 
 unsigned long calculateStationPause(bool forward) {
   long rampDist = (long)rampDownMs / 2;
-  long coast = forward
-    ? stationDist - rampDist
-    : (long)circuitLoopMs - stationDist - rampDist;
+  long coast = (forward ? stationDist : revStationDist) - rampDist;
   unsigned long result = (unsigned long)max(0L, coast);
   Serial.print(forward ? "FWD" : "REV");
   Serial.print(" coast="); Serial.println(result);
@@ -986,6 +998,30 @@ void runRoute(uint8_t index) {
   }
 }
 
+void testStationLoop() {
+  snprintf(line1, sizeof(line1), "STATION TEST");
+  while (!abortRoute) {
+    setDirection(lastDirection);
+    rampSpeed(DOCKING_SPEED);
+    unsigned long t = millis();
+    while (millis() - t < 1200) {
+      if (abortRoute) return;
+      snprintf(line3, sizeof(line3), "DEPARTING");
+      draw(); updateStationLights(); readEncoderStep();
+    }
+    rampSpeed(0);
+    setStationState(AT_STATION);
+    t = millis();
+    while (millis() - t < 3000) {
+      if (abortRoute) return;
+      snprintf(line3, sizeof(line3), "AT STATION");
+      draw(); updateStationLights(); readEncoderStep();
+    }
+    setStationState(DEPARTING);
+    lastDirection = !lastDirection;
+  }
+}
+
 void loop() {
 
   if (abortRoute) {
@@ -1004,6 +1040,11 @@ void loop() {
   if (!hasCalibrated && calibrateAtStartup && sensorEnabled) {
     calibrateTrain();
     hasCalibrated = true;
+    return;
+  }
+
+  if (testStationMode) {
+    testStationLoop();
     return;
   }
 
