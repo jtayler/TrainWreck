@@ -16,11 +16,13 @@
 
 // --- persistence store ---
 
-#define EEPROM_VERSION 8
+#define EEPROM_VERSION 9
 
 struct Persist {
   byte version;
   unsigned long rampDownMs;
+  unsigned long lapFwd;
+  unsigned long lapRev;
   long revStationDist;
   long stationDist;
   uint8_t lastRouteIndex;
@@ -627,21 +629,30 @@ void rampSpeed(int target) {
 }
 
 // -------- calibrate --------
+unsigned long storedLapFwd = 0;
+unsigned long storedLapRev = 0;
+
+void recomputeRevStation() {
+  if (storedLapFwd > 0) {
+    revStationDist = ((long)storedLapRev * ((long)storedLapFwd - stationDist)) / (long)storedLapFwd;
+  }
+}
+
 void calibrateTrain() {
   calibrating = true;
   signalOff();
   stationLightsOff();
   snprintf(line1, sizeof(line1), "CALIBRATION");
   draw();
-  unsigned long lapFwd = measureLap(true);
-  unsigned long lapRev = measureLap(false);
-  if (lapFwd > 0) {
-    revStationDist = ((long)lapRev * (long)((long)lapFwd - stationDist)) / (long)lapFwd;
-  }
+  storedLapFwd = measureLap(true);
+  storedLapRev = measureLap(false);
+  recomputeRevStation();
 
   Persist p;
   p.version = EEPROM_VERSION;
   p.rampDownMs = rampDownMs;
+  p.lapFwd = storedLapFwd;
+  p.lapRev = storedLapRev;
   p.revStationDist = revStationDist;
   p.stationDist = stationDist;
   p.lastRouteIndex = currentRouteIndex;
@@ -660,6 +671,8 @@ void loadFromEEPROM() {
   EEPROM.get(0, p);
   if (p.version == EEPROM_VERSION) {
     rampDownMs = p.rampDownMs;
+    storedLapFwd = p.lapFwd;
+    storedLapRev = p.lapRev;
     revStationDist = p.revStationDist;
     stationDist = p.stationDist;
     currentRouteIndex = p.lastRouteIndex;
