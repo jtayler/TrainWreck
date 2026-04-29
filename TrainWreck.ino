@@ -16,14 +16,15 @@
 
 // --- persistence store ---
 
-#define EEPROM_VERSION 9
+#define EEPROM_VERSION 11
 
 struct Persist {
   byte version;
-  unsigned long rampDownMs;
+  unsigned long rampDownFwdMs;
+  unsigned long rampDownRevMs;
   unsigned long lapFwd;
   unsigned long lapRev;
-  long revStationDist;
+  long revStationOffset;
   long stationDist;
   uint8_t lastRouteIndex;
 };
@@ -63,9 +64,10 @@ const int RAMP_STEP = 10;
 const float MAX_MPH = 74.0;
 
 // ----- station stop -------
-long stationDist = 2500;     // ms sensor→station clockwise at DOCKING_SPEED (tune once)
-long revStationDist = 0;     // ms sensor→station counter-clockwise — auto-computed at calibration
-unsigned long rampDownMs = 0;
+long stationDist = 60;       // clock-minutes of coast past ramp minimum (0 = stop at ramp natural end)
+long revStationOffset = 0;     // ms of coast counter-clockwise — auto-computed at calibration
+unsigned long rampDownFwdMs = 0;
+unsigned long rampDownRevMs = 0;
 bool calibrateAtStartup = true;
 bool testStationMode = false;  // true = just loop: go → park → go → park (for tuning)
 unsigned long snoozingMinutes = 20;  // 20 and Never
@@ -342,7 +344,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   while (millis() - start < 4000) {
     if (abortRoute) return;
     updateStationLights();
-    snprintf(line3, sizeof(line3), "%s", "NOW BOARDING");
+    snprintf(line3, sizeof(line3), "%s", "DEPARTING");
     draw();
     readEncoderStep();
   }
@@ -632,9 +634,18 @@ void rampSpeed(int target) {
 unsigned long storedLapFwd = 0;
 unsigned long storedLapRev = 0;
 
+long stationDistMs() {
+  if (storedLapFwd == 0) return 0;
+  return stationDist * (long)storedLapFwd / 720;
+}
+
 void recomputeRevStation() {
   if (storedLapFwd > 0) {
-    revStationDist = ((long)storedLapRev * ((long)storedLapFwd - stationDist)) / (long)storedLapFwd;
+    long rampFwd = (long)rampDownFwdMs / 2;
+    long rampRev = (long)rampDownRevMs / 2;
+    long totalFwd = rampFwd + stationDistMs();
+    long totalRev = ((long)storedLapRev * ((long)storedLapFwd - totalFwd)) / (long)storedLapFwd;
+    revStationOffset = max(0L, totalRev - rampRev);
   }
 }
 
@@ -650,17 +661,19 @@ void calibrateTrain() {
 
   Persist p;
   p.version = EEPROM_VERSION;
-  p.rampDownMs = rampDownMs;
+  p.rampDownFwdMs = rampDownFwdMs;
+  p.rampDownRevMs = rampDownRevMs;
   p.lapFwd = storedLapFwd;
   p.lapRev = storedLapRev;
-  p.revStationDist = revStationDist;
+  p.revStationOffset = revStationOffset;
   p.stationDist = stationDist;
   p.lastRouteIndex = currentRouteIndex;
   EEPROM.put(0, p);
 
-  Serial.print("FWD lap ms: "); Serial.println(lapFwd);
-  Serial.print("REV lap ms: "); Serial.println(lapRev);
-  Serial.print("Ramp ms: "); Serial.println(rampDownMs);
+  Serial.print("FWD lap ms: "); Serial.println(storedLapFwd);
+  Serial.print("REV lap ms: "); Serial.println(storedLapRev);
+  Serial.print("Ramp FWD ms: "); Serial.println(rampDownFwdMs);
+  Serial.print("Ramp REV ms: "); Serial.println(rampDownRevMs);
   calculateStationPause(true);
   calculateStationPause(false);
   calibrating = false;
@@ -670,18 +683,18 @@ void loadFromEEPROM() {
   Persist p;
   EEPROM.get(0, p);
   if (p.version == EEPROM_VERSION) {
-    rampDownMs = p.rampDownMs;
+    rampDownFwdMs = p.rampDownFwdMs;
+    rampDownRevMs = p.rampDownRevMs;
     storedLapFwd = p.lapFwd;
     storedLapRev = p.lapRev;
-    revStationDist = p.revStationDist;
+    revStationOffset = p.revStationOffset;
     stationDist = p.stationDist;
     currentRouteIndex = p.lastRouteIndex;
   }
 }
 
 unsigned long calculateStationPause(bool forward) {
-  long rampDist = (long)rampDownMs / 2;
-  long coast = (forward ? stationDist : revStationDist) - rampDist;
+  long coast = forward ? stationDistMs() : revStationOffset;
   unsigned long result = (unsigned long)max(0L, coast);
   Serial.print(forward ? "FWD" : "REV");
   Serial.print(" coast="); Serial.println(result);
@@ -691,7 +704,7 @@ unsigned long calculateStationPause(bool forward) {
 unsigned long measureLap(bool forward) {
   unsigned long start = 0;
   int read = 0;
-  snprintf(line3, sizeof(line3), "RAMP");
+  // snprintf(line3, sizeof(line3), "RAMP");
   draw();
 
   setDirection(forward);
@@ -738,7 +751,8 @@ unsigned long measureLap(bool forward) {
   sensorEnabled = false;
   unsigned long rampStart = millis();
   rampSpeed(0);
-  rampDownMs = millis() - rampStart;
+  if (forward) rampDownFwdMs = millis() - rampStart;
+  else         rampDownRevMs = millis() - rampStart;
   sensorEnabled = wasSensor;
 
   return lap;
@@ -922,7 +936,7 @@ void draw() {
     u8g2.drawStr(55, 48, perHourName());
     char routeBuffer[20] = "HALTED";
     if (calibrating) {
-      strncpy(routeBuffer, globalCurrentSpeed == 0 ? "---" : (lastDirection ? "CW" : "CCW"), sizeof(routeBuffer) - 1);
+      strncpy(routeBuffer, globalCurrentSpeed == 0 ? "" : (lastDirection ? "CAL FWD" : "CAL REV"), sizeof(routeBuffer) - 1);
     } else if (globalCurrentSpeed > 0) {
       strncpy_P(routeBuffer, lastDirection ? currentRoute.dirA : currentRoute.dirB, sizeof(routeBuffer) - 1);
       routeBuffer[sizeof(routeBuffer) - 1] = '\0';
@@ -1010,14 +1024,17 @@ void runRoute(uint8_t index) {
 }
 
 void testStationLoop() {
+  memcpy_P(&currentRoute, &ROUTE_DEFAULTS[currentRouteIndex], sizeof(RouteProfile));
   snprintf(line1, sizeof(line1), "STATION TEST");
+  int lap = 0;
   while (!abortRoute) {
+    lap++;
     setDirection(lastDirection);
     rampSpeed(DOCKING_SPEED);
     unsigned long t = millis();
     while (millis() - t < 1200) {
       if (abortRoute) return;
-      snprintf(line3, sizeof(line3), "DEPARTING");
+      snprintf(line3, sizeof(line3), "DEPARTING %d", lap);
       draw(); updateStationLights(); readEncoderStep();
     }
     rampSpeed(0);
@@ -1025,7 +1042,7 @@ void testStationLoop() {
     t = millis();
     while (millis() - t < 3000) {
       if (abortRoute) return;
-      snprintf(line3, sizeof(line3), "AT STATION");
+      snprintf(line3, sizeof(line3), "AT STATION %d", lap);
       draw(); updateStationLights(); readEncoderStep();
     }
     setStationState(DEPARTING);
