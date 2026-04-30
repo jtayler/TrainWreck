@@ -16,12 +16,12 @@
 
 // --- persistence store ---
 
-#define EEPROM_VERSION 11
+#define EEPROM_VERSION 12
 
 struct Persist {
   byte version;
-  unsigned long rampDownFwdMs;
-  unsigned long rampDownRevMs;
+  long rampFwdMinutes;
+  long rampRevMinutes;
   unsigned long lapFwd;
   unsigned long lapRev;
   long revStationOffset;
@@ -66,8 +66,10 @@ const float MAX_MPH = 74.0;
 // ----- station stop -------
 long stationDist = 60;       // clock-minutes of coast past ramp minimum (0 = stop at ramp natural end)
 long revStationOffset = 0;     // ms of coast counter-clockwise — auto-computed at calibration
-unsigned long rampDownFwdMs = 0;
+unsigned long rampDownFwdMs = 0;   // raw ms — set by measureLap, not stored in EEPROM
 unsigned long rampDownRevMs = 0;
+long rampFwdMinutes = 0;           // ramp as clock-minutes fraction of fwd lap
+long rampRevMinutes = 0;
 bool calibrateAtStartup = true;
 bool testStationMode = false;  // true = just loop: go → park → go → park (for tuning)
 unsigned long snoozingMinutes = 20;  // 20 and Never
@@ -344,7 +346,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   while (millis() - start < 4000) {
     if (abortRoute) return;
     updateStationLights();
-    snprintf(line3, sizeof(line3), "%s", "DEPARTING");
+    snprintf(line3, sizeof(line3), "%s", "NOW DEPARTING");
     draw();
     readEncoderStep();
   }
@@ -641,11 +643,11 @@ long stationDistMs() {
 
 void recomputeRevStation() {
   if (storedLapFwd > 0) {
-    long rampFwd = (long)rampDownFwdMs / 2;
-    long rampRev = (long)rampDownRevMs / 2;
-    long totalFwd = rampFwd + stationDistMs();
+    long rampFwdMs = rampFwdMinutes * (long)storedLapFwd / 720L;
+    long rampRevMs = rampRevMinutes * (long)storedLapRev / 720L;
+    long totalFwd = rampFwdMs + stationDistMs();
     long totalRev = ((long)storedLapRev * ((long)storedLapFwd - totalFwd)) / (long)storedLapFwd;
-    revStationOffset = max(0L, totalRev - rampRev);
+    revStationOffset = max(0L, totalRev - rampRevMs);
   }
 }
 
@@ -657,12 +659,14 @@ void calibrateTrain() {
   draw();
   storedLapFwd = measureLap(true);
   storedLapRev = measureLap(false);
+  rampFwdMinutes = ((long)rampDownFwdMs / 2) * 720L / (long)storedLapFwd;
+  rampRevMinutes = ((long)rampDownRevMs / 2) * 720L / (long)storedLapRev;
   recomputeRevStation();
 
   Persist p;
   p.version = EEPROM_VERSION;
-  p.rampDownFwdMs = rampDownFwdMs;
-  p.rampDownRevMs = rampDownRevMs;
+  p.rampFwdMinutes = rampFwdMinutes;
+  p.rampRevMinutes = rampRevMinutes;
   p.lapFwd = storedLapFwd;
   p.lapRev = storedLapRev;
   p.revStationOffset = revStationOffset;
@@ -672,8 +676,8 @@ void calibrateTrain() {
 
   Serial.print("FWD lap ms: "); Serial.println(storedLapFwd);
   Serial.print("REV lap ms: "); Serial.println(storedLapRev);
-  Serial.print("Ramp FWD ms: "); Serial.println(rampDownFwdMs);
-  Serial.print("Ramp REV ms: "); Serial.println(rampDownRevMs);
+  Serial.print("Ramp FWD min: "); Serial.println(rampFwdMinutes);
+  Serial.print("Ramp REV min: "); Serial.println(rampRevMinutes);
   calculateStationPause(true);
   calculateStationPause(false);
   calibrating = false;
@@ -683,8 +687,8 @@ void loadFromEEPROM() {
   Persist p;
   EEPROM.get(0, p);
   if (p.version == EEPROM_VERSION) {
-    rampDownFwdMs = p.rampDownFwdMs;
-    rampDownRevMs = p.rampDownRevMs;
+    rampFwdMinutes = p.rampFwdMinutes;
+    rampRevMinutes = p.rampRevMinutes;
     storedLapFwd = p.lapFwd;
     storedLapRev = p.lapRev;
     revStationOffset = p.revStationOffset;
