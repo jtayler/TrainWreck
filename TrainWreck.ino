@@ -81,6 +81,11 @@ const int DIP_SPEED = MAX_SPEED * 3.6 / 10;       // 25MPH
 const int DIP_SPEED_FAST = MAX_SPEED * 4.9 / 10;  // 35MPH
 const unsigned long DIP_TIME = 3600;              // ms per dip
 
+  // -------- calibrate --------
+  unsigned long storedLapFwd = 0;
+  unsigned long storedLapRev = 0;
+
+
 // -------- display --------
 bool isMPH = true;
 bool lastDirection = true;
@@ -557,7 +562,7 @@ void rampSpeed(int target) {
   updateTafficSignal((rampUp ? 1 : current), rampUp);
 
   unsigned long rampBlockStart = 0;
-
+  
   while (current != target) {
     if (abortRoute) return;
     if (target == 0 && current < (DOCKING_SPEED - 10)) {
@@ -639,10 +644,6 @@ void rampSpeed(int target) {
     }
   }
 }
-
-// -------- calibrate --------
-unsigned long storedLapFwd = 0;
-unsigned long storedLapRev = 0;
 
 long stationDistMs() {
   if (storedLapFwd == 0) return 0;
@@ -748,7 +749,7 @@ unsigned long measureLap(bool forward) {
 
   unsigned long lap = millis() - start;
 
-  snprintf(line3, sizeof(line3), "RAMP");
+  snprintf(line3, sizeof(line3), "TIMING");
   bool wasSensor = sensorEnabled;
   sensorEnabled = false;
   rampSpeed(0);
@@ -935,7 +936,7 @@ void draw() {
     u8g2.drawStr(55, 48, perHourName());
     char routeBuffer[20] = "HALTED";
     if (calibrating) {
-      strncpy(routeBuffer, globalCurrentSpeed == 0 ? "" : (lastDirection ? "CAL FWD" : "CAL REV"), sizeof(routeBuffer) - 1);
+      strncpy(routeBuffer, globalCurrentSpeed == 0 ? "" : (lastDirection ? "CALIBRATION" : "CALIBRATION"), sizeof(routeBuffer) - 1);
     } else if (globalCurrentSpeed > 0) {
       strncpy_P(routeBuffer, lastDirection ? currentRoute.dirA : currentRoute.dirB, sizeof(routeBuffer) - 1);
       routeBuffer[sizeof(routeBuffer) - 1] = '\0';
