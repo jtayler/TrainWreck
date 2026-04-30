@@ -16,12 +16,10 @@
 
 // --- persistence store ---
 
-#define EEPROM_VERSION 12
+#define EEPROM_VERSION 13
 
 struct Persist {
   byte version;
-  long rampFwdMinutes;
-  long rampRevMinutes;
   unsigned long lapFwd;
   unsigned long lapRev;
   long revStationOffset;
@@ -61,15 +59,12 @@ const int STN4_PIN = A4;
 const int MAX_SPEED = 255;
 const int DOCKING_SPEED = 165;
 const int RAMP_STEP = 10;
+const int RAMP_MINUTES = 120;  // enforced ramp block size in clock-minutes (covers physical ramp + hold)
 const float MAX_MPH = 74.0;
 
 // ----- station stop -------
 long stationDist = 60;       // clock-minutes of coast past ramp minimum (0 = stop at ramp natural end)
 long revStationOffset = 0;     // ms of coast counter-clockwise — auto-computed at calibration
-unsigned long rampDownFwdMs = 0;   // raw ms — set by measureLap, not stored in EEPROM
-unsigned long rampDownRevMs = 0;
-long rampFwdMinutes = 0;           // ramp as clock-minutes fraction of fwd lap
-long rampRevMinutes = 0;
 bool calibrateAtStartup = true;
 bool testStationMode = false;  // true = just loop: go → park → go → park (for tuning)
 unsigned long snoozingMinutes = 20;  // 20 and Never
@@ -561,6 +556,8 @@ void rampSpeed(int target) {
 
   updateTafficSignal((rampUp ? 1 : current), rampUp);
 
+  unsigned long rampBlockStart = 0;
+
   while (current != target) {
     if (abortRoute) return;
     if (target == 0 && current < (DOCKING_SPEED - 10)) {
@@ -591,6 +588,7 @@ void rampSpeed(int target) {
         }
         setStationState(AT_STATION);
         dockedThisStop = true;
+        rampBlockStart = millis();
         start = current;
         delta = current;
       }
@@ -630,6 +628,16 @@ void rampSpeed(int target) {
     readEncoderStep();
   }
   updateTafficSignal(current, rampUp);
+
+  if (target == 0 && rampBlockStart > 0) {
+    unsigned long lapMs = lastDirection ? storedLapFwd : storedLapRev;
+    unsigned long rampBlockMs = (unsigned long)RAMP_MINUTES * lapMs / 720L;
+    while (millis() - rampBlockStart < rampBlockMs) {
+      if (abortRoute) return;
+      updateStationLights();
+      readEncoderStep();
+    }
+  }
 }
 
 // -------- calibrate --------
@@ -642,12 +650,8 @@ long stationDistMs() {
 }
 
 void recomputeRevStation() {
-  if (storedLapFwd > 0) {
-    long rampFwdMs = rampFwdMinutes * (long)storedLapFwd / 720L;
-    long rampRevMs = rampRevMinutes * (long)storedLapRev / 720L;
-    long totalFwd = rampFwdMs + stationDistMs();
-    long totalRev = ((long)storedLapRev * ((long)storedLapFwd - totalFwd)) / (long)storedLapFwd;
-    revStationOffset = max(0L, totalRev - rampRevMs);
+  if (storedLapRev > 0) {
+    revStationOffset = max(0L, (720L - stationDist - 2L * RAMP_MINUTES) * (long)storedLapRev / 720L);
   }
 }
 
@@ -659,14 +663,10 @@ void calibrateTrain() {
   draw();
   storedLapFwd = measureLap(true);
   storedLapRev = measureLap(false);
-  rampFwdMinutes = ((long)rampDownFwdMs / 2) * 720L / (long)storedLapFwd;
-  rampRevMinutes = ((long)rampDownRevMs / 2) * 720L / (long)storedLapRev;
   recomputeRevStation();
 
   Persist p;
   p.version = EEPROM_VERSION;
-  p.rampFwdMinutes = rampFwdMinutes;
-  p.rampRevMinutes = rampRevMinutes;
   p.lapFwd = storedLapFwd;
   p.lapRev = storedLapRev;
   p.revStationOffset = revStationOffset;
@@ -676,8 +676,8 @@ void calibrateTrain() {
 
   Serial.print("FWD lap ms: "); Serial.println(storedLapFwd);
   Serial.print("REV lap ms: "); Serial.println(storedLapRev);
-  Serial.print("Ramp FWD min: "); Serial.println(rampFwdMinutes);
-  Serial.print("Ramp REV min: "); Serial.println(rampRevMinutes);
+  Serial.print("FWD coast ms: "); Serial.println(calculateStationPause(true));
+  Serial.print("REV coast ms: "); Serial.println(calculateStationPause(false));
   calculateStationPause(true);
   calculateStationPause(false);
   calibrating = false;
@@ -687,8 +687,6 @@ void loadFromEEPROM() {
   Persist p;
   EEPROM.get(0, p);
   if (p.version == EEPROM_VERSION) {
-    rampFwdMinutes = p.rampFwdMinutes;
-    rampRevMinutes = p.rampRevMinutes;
     storedLapFwd = p.lapFwd;
     storedLapRev = p.lapRev;
     revStationOffset = p.revStationOffset;
@@ -753,10 +751,7 @@ unsigned long measureLap(bool forward) {
   snprintf(line3, sizeof(line3), "RAMP");
   bool wasSensor = sensorEnabled;
   sensorEnabled = false;
-  unsigned long rampStart = millis();
   rampSpeed(0);
-  if (forward) rampDownFwdMs = millis() - rampStart;
-  else         rampDownRevMs = millis() - rampStart;
   sensorEnabled = wasSensor;
 
   return lap;
