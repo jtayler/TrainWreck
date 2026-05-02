@@ -16,14 +16,12 @@
 
 // --- persistence store ---
 
-#define EEPROM_VERSION 13
+#define EEPROM_VERSION 14
 
 struct Persist {
   byte version;
   unsigned long lapFwd;
   unsigned long lapRev;
-  long revStationOffset;
-  long stationDist;
   uint8_t lastRouteIndex;
 };
 
@@ -59,12 +57,15 @@ const int STN4_PIN = A4;
 const int MAX_SPEED = 255;
 const int DOCKING_SPEED = 165;
 const int RAMP_STEP = 10;
-const int RAMP_MINUTES = 120;  // enforced ramp block size in clock-minutes (covers physical ramp + hold)
+const int RAMP_MINUTES = 120;  // minimum block hold in clock-minutes (timer, not distance)
+const int RAMP_DIST = 120;     // physical ramp distance in clock-minutes — tune to observed overshoot
 const float MAX_MPH = 74.0;
 
 // ----- station stop -------
-long stationDist = 60;       // clock-minutes of coast past ramp minimum (0 = stop at ramp natural end)
-long revStationOffset = 0;     // ms of coast counter-clockwise — auto-computed at calibration
+ // clock-minutes from 5pm because sensor is at 3pm so it lands at 5.
+ // 60+60+60+60+60 6,7,8,9 and 10
+long stationDist = 55;        
+long revStationOffset = 30;   
 bool calibrateAtStartup = true;
 bool testStationMode = false;  // true = just loop: go → park → go → park (for tuning)
 unsigned long snoozingMinutes = 20;  // 20 and Never
@@ -645,33 +646,19 @@ void rampSpeed(int target) {
   }
 }
 
-long stationDistMs() {
-  if (storedLapFwd == 0) return 0;
-  return stationDist * (long)storedLapFwd / 720;
-}
-
-void recomputeRevStation() {
-  if (storedLapRev > 0) {
-    revStationOffset = max(0L, (720L - stationDist - 2L * RAMP_MINUTES) * (long)storedLapRev / 720L);
-  }
-}
-
 void calibrateTrain() {
   calibrating = true;
   signalOff();
   stationLightsOff();
-  snprintf(line1, sizeof(line1), "CALIBRATION");
+  snprintf(line1, sizeof(line1), "CALIBRATE");
   draw();
   storedLapFwd = measureLap(true);
   storedLapRev = measureLap(false);
-  recomputeRevStation();
 
   Persist p;
   p.version = EEPROM_VERSION;
   p.lapFwd = storedLapFwd;
   p.lapRev = storedLapRev;
-  p.revStationOffset = revStationOffset;
-  p.stationDist = stationDist;
   p.lastRouteIndex = currentRouteIndex;
   EEPROM.put(0, p);
 
@@ -690,18 +677,23 @@ void loadFromEEPROM() {
   if (p.version == EEPROM_VERSION) {
     storedLapFwd = p.lapFwd;
     storedLapRev = p.lapRev;
-    revStationOffset = p.revStationOffset;
-    stationDist = p.stationDist;
     currentRouteIndex = p.lastRouteIndex;
   }
 }
 
 unsigned long calculateStationPause(bool forward) {
-  long coast = forward ? stationDistMs() : revStationOffset;
-  unsigned long result = (unsigned long)max(0L, coast);
-  Serial.print(forward ? "FWD" : "REV");
-  Serial.print(" coast="); Serial.println(result);
-  return result;
+  if (forward) {
+    if (storedLapFwd == 0) return 0;
+    unsigned long ms = (unsigned long)stationDist * storedLapFwd / 720UL;
+    Serial.print("FWD coast="); Serial.println(ms);
+    return ms;
+  } else {
+    if (storedLapRev == 0) return 0;
+    long clockMin = 720L - stationDist - 2L * RAMP_DIST + revStationOffset;
+    unsigned long ms = (unsigned long)max(0L, clockMin) * storedLapRev / 720UL;
+    Serial.print("REV coast="); Serial.println(ms);
+    return ms;
+  }
 }
 // Function to measure lap time
 unsigned long measureLap(bool forward) {
@@ -719,8 +711,8 @@ unsigned long measureLap(bool forward) {
     writeMotor(forward, s);
   }
   bool lastState = analogRead(IR_PIN) < IR_THRESHOLD;
-  snprintf(line3, sizeof(line3), "TIMING");
-  draw();
+  // snprintf(line3, sizeof(line3), "TIMING");
+  // draw();
 
   while (true) {
     if (abortRoute) {
@@ -749,11 +741,12 @@ unsigned long measureLap(bool forward) {
 
   unsigned long lap = millis() - start;
 
-  snprintf(line3, sizeof(line3), "TIMING");
   bool wasSensor = sensorEnabled;
   sensorEnabled = false;
   rampSpeed(0);
   sensorEnabled = wasSensor;
+  snprintf(line3, sizeof(line3), "GO!");
+  draw();
 
   return lap;
 }
@@ -775,8 +768,8 @@ const char rt_ghan[]     PROGMEM = "The Great Ghan";
 const char rt_century[]  PROGMEM = "20th Century Ltd";
 const char rt_thomas[]   PROGMEM = "Thomas & Friends";
 
-const char dir_pelbay[]  PROGMEM = "PELHAM BAY";
-const char dir_sferry[]  PROGMEM = "SOUTH FERRY";
+const char dir_pelbay[]  PROGMEM = "UPTOWN";
+const char dir_sferry[]  PROGMEM = "DOWNTOWN";
 const char dir_hogs[]    PROGMEM = "HOGSMEADE";
 const char dir_london[]  PROGMEM = "LONDON";
 const char dir_sanfran[] PROGMEM = "SAN FRAN";
@@ -869,6 +862,8 @@ void setup() {
   pinMode(GRN_PIN, OUTPUT);
 
   loadFromEEPROM();
+  Serial.print("stationDist="); Serial.println(stationDist);
+  Serial.print("revStationOffset="); Serial.println(revStationOffset);
   u8g2.begin();
   u8g2.clearBuffer();
   splashScreen();
@@ -936,7 +931,7 @@ void draw() {
     u8g2.drawStr(55, 48, perHourName());
     char routeBuffer[20] = "HALTED";
     if (calibrating) {
-      strncpy(routeBuffer, globalCurrentSpeed == 0 ? "" : (lastDirection ? "CALIBRATION" : "CALIBRATION"), sizeof(routeBuffer) - 1);
+      strncpy(routeBuffer, globalCurrentSpeed == 0 ? "" : (lastDirection ? "FORWARD" : "REVERSE"), sizeof(routeBuffer) - 1);
     } else if (globalCurrentSpeed > 0) {
       strncpy_P(routeBuffer, lastDirection ? currentRoute.dirA : currentRoute.dirB, sizeof(routeBuffer) - 1);
       routeBuffer[sizeof(routeBuffer) - 1] = '\0';
