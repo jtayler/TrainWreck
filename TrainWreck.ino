@@ -57,16 +57,12 @@ const int MAX_SPEED = 255;
 const int DOCKING_SPEED = 165;
 const int RAMP_STEP = 10;
 const int RAMP_MINUTES = 120;  // minimum block hold in clock-minutes (timer, not distance)
-const int RAMP_DIST = 120;     // physical ramp distance in clock-minutes — tune to observed overshoot
 const float MAX_MPH = 74.0;
 
 // ----- station stop -------
- // clock-minutes from 5pm because sensor is at 3pm so it lands at 5.
- // 60+60+60+60+60 6,7,8,9 and 10
-long stationDist = 55;        
-long revStationOffset = 30;   
-bool calibrateAtStartup = true;
-bool testStationMode = false;  // true = just loop: go → park → go → park (for tuning)
+long stationDist = 3 * 60;
+bool calibrateAtStartup = false;
+bool testStationMode = true;  // true = just loop: go → park → go → park (for tuning)
 unsigned long snoozingMinutes = 20;  // 20 and Never
 
 // ------- calibration ---------
@@ -77,9 +73,9 @@ bool stationArmed = false;
 unsigned long stationTick = 0;
 
 // ----- dip behavior -----
-const int DIP_SPEED = MAX_SPEED * 3.6 / 10;       // 25MPH
-const int DIP_SPEED_FAST = MAX_SPEED * 4.9 / 10;  // 35MPH
-const unsigned long DIP_TIME = 3600;              // ms per dip
+const int DIP_SPEED = MAX_SPEED * 1.6 / 10;
+const int DIP_SPEED_FAST = MAX_SPEED * 3.1 / 10; 
+const unsigned long DIP_TIME = 7600;
 
   // -------- calibrate --------
   unsigned long storedLapFwd = 0;
@@ -700,7 +696,7 @@ unsigned long calculateStationPause(bool forward) {
     return ms;
   } else {
     if (storedLapRev == 0) return 0;
-    long clockMin = 720L - stationDist - 2L * RAMP_DIST + revStationOffset;
+    long clockMin = 480L - stationDist;
     unsigned long ms = (unsigned long)max(0L, clockMin) * storedLapRev / 720UL;
     Serial.print("REV coast="); Serial.println(ms);
     return ms;
@@ -857,7 +853,6 @@ void setup() {
 
   loadFromEEPROM();
   Serial.print("stationDist="); Serial.println(stationDist);
-  Serial.print("revStationOffset="); Serial.println(revStationOffset);
   u8g2.begin();
   u8g2.clearBuffer();
   splashScreen();
