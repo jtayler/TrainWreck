@@ -30,7 +30,6 @@ U8G2_SH1106_128X64_NONAME_1_4W_HW_SPI u8g2(U8G2_R0, 10, 9, 8);
 
 // -------- pins --------
 const int IR_PIN = A0;
-const int IR_THRESHOLD = 650;
 
 const int in1Pin = 5;
 const int in2Pin = 6;
@@ -539,6 +538,19 @@ void setDirection(bool forward) {
   lastDirection = forward;
 }
 
+// -------- IR sensor --------
+bool trainPassingIR() {
+  static int baseline = -1;
+  static bool inDip = false;
+  int v = analogRead(IR_PIN);
+  if (baseline < 0) baseline = v;
+  int percent = ((baseline - v) * 100) / baseline;
+  if (!inDip && percent >= 35) { inDip = true; return true; }
+  if (inDip && percent <= 10) inDip = false;
+  if (!inDip) baseline = (baseline * 31 + v) / 32;
+  return false;
+}
+
 // -------- ramp --------
 void rampSpeed(int target) {
   static int current = 0;
@@ -575,8 +587,7 @@ void rampSpeed(int target) {
         draw();
         while (!stationArmed) {
           if (abortRoute) return;
-          int v = analogRead(IR_PIN);
-          if (v < IR_THRESHOLD) {
+          if (trainPassingIR()) {
             stationArmed = true;
             stationTick = millis();
           }
@@ -698,7 +709,6 @@ unsigned long calculateStationPause(bool forward) {
 // Function to measure lap time
 unsigned long measureLap(bool forward) {
   unsigned long start = 0;
-  int read = 0;
   // snprintf(line3, sizeof(line3), "RAMP");
   draw();
 
@@ -710,31 +720,15 @@ unsigned long measureLap(bool forward) {
     draw();
     writeMotor(forward, s);
   }
-  bool lastState = analogRead(IR_PIN) < IR_THRESHOLD;
-  // snprintf(line3, sizeof(line3), "TIMING");
-  // draw();
 
-  while (true) {
-    if (abortRoute) {
-      return 0;
-    }
-    read = analogRead(IR_PIN);
-    bool state = read < IR_THRESHOLD;
-    if (!lastState && state) break;
-    lastState = state;
-  }
+  while (!trainPassingIR()) { if (abortRoute) return 0; }
   snprintf(line3, sizeof(line3), "MARK");
   draw();
 
   delay(1000);
 
   start = millis();
-  while (true) {
-    read = analogRead(IR_PIN);
-    bool state = read < IR_THRESHOLD;
-    if (lastState && !state) break;
-    lastState = state;
-  }
+  while (!trainPassingIR()) { if (abortRoute) return 0; }
 
   snprintf(line3, sizeof(line3), "SET");
   draw();
