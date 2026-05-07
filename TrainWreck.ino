@@ -57,11 +57,11 @@ const int MAX_SPEED = 255;
 const int DOCKING_SPEED = 165;
 const int RAMP_STEP = 10;
 const int RAMP_MINUTES = 120;
-const float MAX_MPH = 74.0;
+const float MAX_MPH = 99.0;
 
 // ----- station stop -------
 long stationDist = 1 * 60;
-bool calibrateAtStartup = false;
+bool calibrateAtStartup = true;
 bool testStationMode = false;
 unsigned long snoozingMinutes = 20;
 
@@ -73,8 +73,8 @@ bool stationArmed = false;
 unsigned long stationTick = 0;
 
 // ----- dip behavior -----
-const int DIP_SPEED = MAX_SPEED * 2.3 / 10;
-const int DIP_SPEED_FAST = MAX_SPEED * 3.8 / 10; 
+const int DIP_SPEED = MAX_SPEED * 2.46 / 10;
+const int DIP_SPEED_FAST = MAX_SPEED * 3.88 / 10; 
 const unsigned long DIP_TIME = 7600;
 
   // -------- calibrate --------
@@ -535,17 +535,22 @@ void setDirection(bool forward) {
 }
 
 // -------- IR sensor --------
-bool trainPassingIR() {
-  static int baseline = -1;
-  static bool inDip = false;
-  int v = analogRead(IR_PIN);
-  if (baseline < 0) baseline = v;
-  int percent = ((baseline - v) * 100) / baseline;
-  if (!inDip && percent >= 35) { inDip = true; return true; }
-  if (inDip && percent <= 10) inDip = false;
-  if (!inDip) baseline = (baseline * 31 + v) / 32;
-  return false;
-}
+  bool trainPassingIR() {
+    static int baseline = -1;
+    static bool inDip = false;
+    static unsigned long lastBaselineUpdate = 0;
+    int v = analogRead(IR_PIN);                                                                                                                                                                                                                  
+    if (baseline < 0) baseline = v;
+    int percent = ((baseline - v) * 100) / baseline;                                                                                                                                                                                             
+    if (!inDip && percent >= 15) { inDip = true; return true; }                                                                                                                                                                                  
+    if (inDip && percent <= 5) inDip = false;
+    unsigned long now = millis();                                                                                                                                                                                                                
+    if (!inDip && now - lastBaselineUpdate >= 250) {                                                                                                                                                                                             
+      baseline = (baseline * 3 + v) / 4;
+      lastBaselineUpdate = now;                                                                                                                                                                                                                  
+    }                                                                                                                                                                                                                                            
+    return false;
+  }                                                                                                                                                                                                                                              
 
 // -------- ramp --------
 void rampSpeed(int target) {
@@ -696,7 +701,7 @@ unsigned long calculateStationPause(bool forward) {
     return ms;
   } else {
     if (storedLapRev == 0) return 0;
-    long clockMin = 480UL - stationDist; // shoudl be 480 or half but it's not.
+    long clockMin = 480 - stationDist; // shoudl be 480 or half but it's not.
     unsigned long ms = (unsigned long)max(0L, clockMin) * storedLapRev / 720UL;
     Serial.print("REV coast="); Serial.println(ms);
     return ms;
