@@ -56,14 +56,14 @@ const int STN4_PIN = A4;
 const int MAX_SPEED = 255;
 const int DOCKING_SPEED = 165;
 const int RAMP_STEP = 10;
-const int RAMP_MINUTES = 120;  // minimum block hold in clock-minutes (timer, not distance)
+const int RAMP_MINUTES = 120;
 const float MAX_MPH = 74.0;
 
 // ----- station stop -------
-long stationDist = 3 * 60;
+long stationDist = 1 * 60;
 bool calibrateAtStartup = false;
-bool testStationMode = true;  // true = just loop: go → park → go → park (for tuning)
-unsigned long snoozingMinutes = 20;  // 20 and Never
+bool testStationMode = false;
+unsigned long snoozingMinutes = 20;
 
 // ------- calibration ---------
 bool sensorEnabled = true;
@@ -73,8 +73,8 @@ bool stationArmed = false;
 unsigned long stationTick = 0;
 
 // ----- dip behavior -----
-const int DIP_SPEED = MAX_SPEED * 1.6 / 10;
-const int DIP_SPEED_FAST = MAX_SPEED * 3.1 / 10; 
+const int DIP_SPEED = MAX_SPEED * 2.3 / 10;
+const int DIP_SPEED_FAST = MAX_SPEED * 3.8 / 10; 
 const unsigned long DIP_TIME = 7600;
 
   // -------- calibrate --------
@@ -696,7 +696,7 @@ unsigned long calculateStationPause(bool forward) {
     return ms;
   } else {
     if (storedLapRev == 0) return 0;
-    long clockMin = 480L - stationDist;
+    long clockMin = 480UL - stationDist; // shoudl be 480 or half but it's not.
     unsigned long ms = (unsigned long)max(0L, clockMin) * storedLapRev / 720UL;
     Serial.print("REV coast="); Serial.println(ms);
     return ms;
