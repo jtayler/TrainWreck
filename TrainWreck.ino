@@ -5,23 +5,18 @@
 #include <Encoder.h>
 
 // --- pins ---
-
 #define CS_PIN 10
 #define DC_PIN 9
 #define RST_PIN 8
 
-// #define ENC_CLK 7
-// #define ENC_DT A5
-// #define ENC_SW 12
-
 // --- persistence store ---
-
-#define EEPROM_VERSION 14
+#define EEPROM_VERSION 15
 
 struct Persist {
   byte version;
   unsigned long lapFwd;
   unsigned long lapRev;
+  unsigned long trainMs;
   uint8_t lastRouteIndex;
 };
 
@@ -30,19 +25,11 @@ U8G2_SH1106_128X64_NONAME_1_4W_HW_SPI u8g2(U8G2_R0, 10, 9, 8);
 
 // -------- pins --------
 const int IR_PIN = A0;
-
 const int in1Pin = 5;
 const int in2Pin = 6;
-//const int in1Pin = 7;
-//const int in2Pin = A2;
-
 const int CLK_PIN = 2;  // INT0
 const int DT_PIN = 3;   // INT1
 const int buttonPin = 12;
-long lastPos = 0;
-
-// const int RED_PIN = 2;
-// const int YEL_PIN = 3;
 const int RED_PIN = 7;
 const int YEL_PIN = A5;
 const int GRN_PIN = 4;
@@ -52,35 +39,36 @@ const int STN2_PIN = A2;
 const int STN3_PIN = A3;
 const int STN4_PIN = A4;
 
+// ----- station stop -------
+long stationDist = 1 * 60;
+bool calibrateAtStartup = false;
+bool testStationMode = false;
+
 // -------- tuning ---------
 const int MAX_SPEED = 255;
 const int DOCKING_SPEED = 165;
 const int RAMP_STEP = 10;
 const int RAMP_MINUTES = 120;
-const float MAX_MPH = 99.0;
-
-// ----- station stop -------
-long stationDist = 1 * 60;
-bool calibrateAtStartup = true;
-bool testStationMode = false;
-unsigned long snoozingMinutes = 20;
+const float MAX_MPH = 72.0;
 
 // ------- calibration ---------
-bool sensorEnabled = true;
+unsigned long snoozingMinutes = 20;
+bool sensorEnabled = false;
 volatile bool calibrating = false;
 bool hasCalibrated = false;
 bool stationArmed = false;
 unsigned long stationTick = 0;
+long lastPos = 0;
 
 // ----- dip behavior -----
 const int DIP_SPEED = MAX_SPEED * 2.46 / 10;
 const int DIP_SPEED_FAST = MAX_SPEED * 3.88 / 10; 
 const unsigned long DIP_TIME = 7600;
 
-  // -------- calibrate --------
-  unsigned long storedLapFwd = 0;
-  unsigned long storedLapRev = 0;
-
+// -------- calibrate --------
+unsigned long storedLapFwd = 0;
+unsigned long storedLapRev = 0;
+unsigned long irDipDurationMs = 0;
 
 // -------- display --------
 bool isMPH = true;
@@ -535,22 +523,29 @@ void setDirection(bool forward) {
 }
 
 // -------- IR sensor --------
-  bool trainPassingIR() {
-    static int baseline = -1;
-    static bool inDip = false;
-    static unsigned long lastBaselineUpdate = 0;
-    int v = analogRead(IR_PIN);                                                                                                                                                                                                                  
-    if (baseline < 0) baseline = v;
-    int percent = ((baseline - v) * 100) / baseline;                                                                                                                                                                                             
-    if (!inDip && percent >= 15) { inDip = true; return true; }                                                                                                                                                                                  
-    if (inDip && percent <= 5) inDip = false;
-    unsigned long now = millis();                                                                                                                                                                                                                
-    if (!inDip && now - lastBaselineUpdate >= 250) {                                                                                                                                                                                             
+bool trainPassingIR() {
+  static int baseline = -1;
+  static bool inDip = false;
+  static unsigned long dipStartMs = 0;
+  static unsigned long lastBaselineUpdate = 0;
+  int v = analogRead(IR_PIN);
+  unsigned long now = millis();
+  if (baseline < 0) baseline = v;
+  int percent = ((baseline - v) * 100) / baseline;
+  if (!inDip) {
+    if (percent >= 15) { inDip = true; dipStartMs = now; }
+    else if (now - lastBaselineUpdate >= 250) {
       baseline = (baseline * 3 + v) / 4;
-      lastBaselineUpdate = now;                                                                                                                                                                                                                  
-    }                                                                                                                                                                                                                                            
-    return false;
-  }                                                                                                                                                                                                                                              
+      lastBaselineUpdate = now;
+    }
+  } else {
+    if (percent <= 5) {
+      irDipDurationMs = now - dipStartMs;
+      inDip = false; return true;
+    }
+  }
+  return false;
+}                                                                                                                                                                                                                                              
 
 // -------- ramp --------
 void rampSpeed(int target) {
@@ -662,7 +657,7 @@ void calibrateTrain() {
   calibrating = true;
   signalOff();
   stationLightsOff();
-  snprintf(line1, sizeof(line1), "CALIBRATE");
+  snprintf(line1, sizeof(line1), "CALIBRATION");
   draw();
   storedLapFwd = measureLap(true);
   storedLapRev = measureLap(false);
@@ -671,13 +666,17 @@ void calibrateTrain() {
   p.version = EEPROM_VERSION;
   p.lapFwd = storedLapFwd;
   p.lapRev = storedLapRev;
+  p.trainMs = irDipDurationMs;
   p.lastRouteIndex = currentRouteIndex;
   EEPROM.put(0, p);
 
-  Serial.print("FWD lap ms: "); Serial.println(storedLapFwd);
-  Serial.print("REV lap ms: "); Serial.println(storedLapRev);
-  Serial.print("FWD coast ms: "); Serial.println(calculateStationPause(true));
-  Serial.print("REV coast ms: "); Serial.println(calculateStationPause(false));
+  // Serial.print("FWD lap ms: "); Serial.println(storedLapFwd);
+  // Serial.print("REV lap ms: "); Serial.println(storedLapRev);
+  if (storedLapFwd > 0)  {
+    // Serial.print("Train size: "); Serial.print(irDipDurationMs * 720UL / storedLapFwd); Serial.println(" cmin");
+  }
+  // Serial.print("FWD coast ms: "); Serial.println(calculateStationPause(true));
+  // Serial.print("REV coast ms: "); Serial.println(calculateStationPause(false));
   calculateStationPause(true);
   calculateStationPause(false);
   calibrating = false;
@@ -689,28 +688,28 @@ void loadFromEEPROM() {
   if (p.version == EEPROM_VERSION) {
     storedLapFwd = p.lapFwd;
     storedLapRev = p.lapRev;
+    irDipDurationMs = p.trainMs;
     currentRouteIndex = p.lastRouteIndex;
   }
 }
 
 unsigned long calculateStationPause(bool forward) {
+  long correction = (long)(irDipDurationMs / 2);
   if (forward) {
     if (storedLapFwd == 0) return 0;
-    unsigned long ms = (unsigned long)stationDist * storedLapFwd / 720UL;
-    Serial.print("FWD coast="); Serial.println(ms);
-    return ms;
+    long ms = (long)((unsigned long)stationDist * storedLapFwd / 720UL) - correction;
+    // Serial.print("FWD coast="); Serial.println(max(0L, ms));
+    return (unsigned long)max(0L, ms);
   } else {
     if (storedLapRev == 0) return 0;
-    long clockMin = 480 - stationDist; // shoudl be 480 or half but it's not.
-    unsigned long ms = (unsigned long)max(0L, clockMin) * storedLapRev / 720UL;
-    Serial.print("REV coast="); Serial.println(ms);
-    return ms;
+    long ms = (long)((480L - stationDist) * storedLapRev / 720L) - correction;
+    // Serial.print("REV coast="); Serial.println(max(0L, ms));
+    return (unsigned long)max(0L, ms);
   }
 }
 // Function to measure lap time
 unsigned long measureLap(bool forward) {
   unsigned long start = 0;
-  // snprintf(line3, sizeof(line3), "RAMP");
   draw();
 
   setDirection(forward);
@@ -726,7 +725,7 @@ unsigned long measureLap(bool forward) {
   snprintf(line3, sizeof(line3), "MARK");
   draw();
 
-  delay(1000);
+  delay(300);
 
   start = millis();
   while (!trainPassingIR()) { if (abortRoute) return 0; }
@@ -838,7 +837,7 @@ bool detectSensor() {
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("BOOT");
+  // Serial.println("BOOT");
 
   pinMode(in1Pin, OUTPUT);
   pinMode(in2Pin, OUTPUT);
@@ -857,14 +856,14 @@ void setup() {
   pinMode(GRN_PIN, OUTPUT);
 
   loadFromEEPROM();
-  Serial.print("stationDist="); Serial.println(stationDist);
+  // Serial.print("stationDist="); Serial.println(stationDist);
   u8g2.begin();
   u8g2.clearBuffer();
   splashScreen();
 
   pinMode(IR_PIN, INPUT);
   sensorEnabled = detectSensor();
-  Serial.println(sensorEnabled ? "IR OK" : "IR OFF");
+  // Serial.println(sensorEnabled ? "IR OK" : "IR OFF");
 }
 
 void splashScreen() {
@@ -983,8 +982,8 @@ void runRoute(uint8_t index) {
   uint16_t baseSpeed;
   switch (currentRoute.equipment) {
     case BULLET: baseSpeed = MAX_SPEED; break;
-    case SHUTTLE: baseSpeed = MAX_SPEED * 0.98; break;
-    case FREIGHT: baseSpeed = MAX_SPEED * 0.95; break;
+    case SHUTTLE: baseSpeed = MAX_SPEED * 0.95; break;
+    case FREIGHT: baseSpeed = MAX_SPEED * 0.85; break;
   }
 
   // -------- Range → duration --------
@@ -992,15 +991,15 @@ void runRoute(uint8_t index) {
   switch (currentRoute.range) {
     case LOCAL: runTime = random(6, 12); break;
     case SHORT_RUN: runTime = random(12, 20); break;
-    case LONG_HAUL: runTime = random(20, 30); break;
+    case LONG_HAUL: runTime = random(20, 40); break;
   }
 
   // -------- Service → dips --------
   uint8_t dips;
   switch (currentRoute.service) {
     case NONSTOP: dips = 0; break;
-    case LIMITED: dips = random(1, 3); break;
-    case UNPREDICTABLE: dips = random(0, 4); break;
+    case LIMITED: dips = random(1, 4); break;
+    case UNPREDICTABLE: dips = random(0, 6); break;
   }
 
   // -------- Execute --------
