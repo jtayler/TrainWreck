@@ -41,7 +41,7 @@ const int STN4_PIN = A4;
 
 // ----- station stop -------
 long stationDist = 1 * 60;
-bool calibrateAtStartup = false;
+bool calibrateAtStartup = true;
 bool testStationMode = false;
 
 // -------- tuning ---------
@@ -527,16 +527,22 @@ bool trainPassingIR() {
   static int baseline = -1;
   static bool inDip = false;
   static unsigned long dipStartMs = 0;
+  static unsigned long dipCandidateMs = 0;
   static unsigned long lastBaselineUpdate = 0;
   int v = analogRead(IR_PIN);
   unsigned long now = millis();
   if (baseline < 0) baseline = v;
   int percent = ((baseline - v) * 100) / baseline;
   if (!inDip) {
-    if (percent >= 15) { inDip = true; dipStartMs = now; }
-    else if (now - lastBaselineUpdate >= 250) {
-      baseline = (baseline * 3 + v) / 4;
-      lastBaselineUpdate = now;
+    if (percent >= 15) {
+      if (dipCandidateMs == 0) dipCandidateMs = now;
+      if (now - dipCandidateMs >= 20) { inDip = true; dipStartMs = dipCandidateMs; dipCandidateMs = 0; }
+    } else {
+      dipCandidateMs = 0;
+      if (now - lastBaselineUpdate >= 250) {
+        baseline = (baseline * 3 + v) / 4;
+        lastBaselineUpdate = now;
+      }
     }
   } else {
     if (percent <= 5) {
