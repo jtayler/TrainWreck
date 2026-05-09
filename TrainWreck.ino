@@ -39,10 +39,11 @@ const int STN2_PIN = A2;
 const int STN3_PIN = A3;
 const int STN4_PIN = A4;
 
-// ----- station stop -------
+// --- startup & station ---
 long stationDist = 1 * 60;
 bool calibrateAtStartup = true;
 bool testStationMode = false;
+const long STATION_EARLY_MS = 300;
 
 // -------- tuning ---------
 const int MAX_SPEED = 255;
@@ -63,7 +64,7 @@ long lastPos = 0;
 // ----- dip behavior -----
 const int DIP_SPEED = MAX_SPEED * 2.46 / 10;
 const int DIP_SPEED_FAST = MAX_SPEED * 3.88 / 10; 
-const unsigned long DIP_TIME = 7600;
+const unsigned long DIP_TIME = 9600;
 
 // -------- calibrate --------
 unsigned long storedLapFwd = 0;
@@ -272,7 +273,8 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
   rampSpeed(speed);
 
   if (dipCount > 0) {
-    unsigned long segment = (runTime * 1000) / (dipCount + 1);
+    long jitterPct = random(-20, 21);  // -20% to +20%
+    unsigned long segment = (runTime * 1000UL * (100 + jitterPct)) / 100;
     for (int i = 0; i < dipCount; i++) {
       if (abortRoute) return;
       unsigned long legStartTime = millis();
@@ -284,8 +286,10 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
         readEncoderStep();
       }
       rampSpeed(random(DIP_SPEED, DIP_SPEED_FAST));
+      long dipJitterPct = random(-20, 21);  // -20% to +20%
+      unsigned long thisDipTime = (DIP_TIME * (100 + dipJitterPct)) / 100;
       unsigned long dipStartTime = millis();
-      while (millis() - dipStartTime < DIP_TIME) {
+      while (millis() - dipStartTime < thisDipTime) {
         if (abortRoute) return;
         snprintf(line3, sizeof(line3), "%s %ds", "SLOW LEG", DIP_TIME / 1000);
         draw();
@@ -316,7 +320,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
 
   rampSpeed(0);
   stateStartTime = millis();
-  unsigned long pauseMs = pauseTime * 1000;
+  unsigned long pauseMs = max(0L, (long)(pauseTime * 1000UL) - STATION_EARLY_MS);
   while (millis() - stateStartTime < pauseMs) {
     if (abortRoute) return;
     snprintf(line3, sizeof(line3), "%s %ds", "AT STATION", pauseTime);
@@ -523,35 +527,52 @@ void setDirection(bool forward) {
 }
 
 // -------- IR sensor --------
-bool trainPassingIR() {
+bool trainPassingIR(bool reset = false) {
   static int baseline = -1;
+  static bool armed = false;
   static bool inDip = false;
+  static unsigned long armStartMs = 0;
   static unsigned long dipStartMs = 0;
-  static unsigned long dipCandidateMs = 0;
   static unsigned long lastBaselineUpdate = 0;
+
   int v = analogRead(IR_PIN);
   unsigned long now = millis();
-  if (baseline < 0) baseline = v;
-  int percent = ((baseline - v) * 100) / baseline;
+
+  if (reset || baseline < 1) {
+    baseline = v;
+    armed = false;
+    inDip = false;
+    armStartMs = now;
+    lastBaselineUpdate = now;
+    return false;
+  }
+
+  if (!armed) {
+    baseline = (baseline * 7 + v) / 8;
+    if (now - armStartMs >= 750) armed = true;
+    return false;
+  }
+
+  int percent = ((long)(baseline - v) * 100L) / baseline;
+
   if (!inDip) {
-    if (percent >= 15) {
-      if (dipCandidateMs == 0) dipCandidateMs = now;
-      if (now - dipCandidateMs >= 20) { inDip = true; dipStartMs = dipCandidateMs; dipCandidateMs = 0; }
-    } else {
-      dipCandidateMs = 0;
-      if (now - lastBaselineUpdate >= 250) {
-        baseline = (baseline * 3 + v) / 4;
-        lastBaselineUpdate = now;
-      }
+    if (percent >= 12) {
+      inDip = true;
+      dipStartMs = now;
+    } else if (percent < 4 && now - lastBaselineUpdate >= 500) {
+      baseline = (baseline * 15 + v) / 16;
+      lastBaselineUpdate = now;
     }
   } else {
     if (percent <= 5) {
       irDipDurationMs = now - dipStartMs;
-      inDip = false; return true;
+      inDip = false;
+      return true;
     }
   }
+
   return false;
-}                                                                                                                                                                                                                                              
+}
 
 // -------- ramp --------
 void rampSpeed(int target) {
@@ -587,6 +608,7 @@ void rampSpeed(int target) {
       if (current <= DOCKING_SPEED) {
         snprintf(line3, sizeof(line3), "%s", "BRAKE TO HALT");
         draw();
+        trainPassingIR(true);
         while (!stationArmed) {
           if (abortRoute) return;
           if (trainPassingIR()) {
@@ -663,7 +685,7 @@ void calibrateTrain() {
   calibrating = true;
   signalOff();
   stationLightsOff();
-  snprintf(line1, sizeof(line1), "CALIBRATION");
+  snprintf(line1, sizeof(line1), "CALIBRATE ENGINE");
   draw();
   storedLapFwd = measureLap(true);
   storedLapRev = measureLap(false);
@@ -685,6 +707,7 @@ void calibrateTrain() {
   // Serial.print("REV coast ms: "); Serial.println(calculateStationPause(false));
   calculateStationPause(true);
   calculateStationPause(false);
+  setStationState(DEPARTING);
   calibrating = false;
 }
 
@@ -727,6 +750,7 @@ unsigned long measureLap(bool forward) {
     writeMotor(forward, s);
   }
 
+  trainPassingIR(true);
   while (!trainPassingIR()) { if (abortRoute) return 0; }
   snprintf(line3, sizeof(line3), "MARK");
   draw();
@@ -734,6 +758,7 @@ unsigned long measureLap(bool forward) {
   delay(300);
 
   start = millis();
+  trainPassingIR(true);
   while (!trainPassingIR()) { if (abortRoute) return 0; }
 
   snprintf(line3, sizeof(line3), "SET");
@@ -866,6 +891,8 @@ void setup() {
   u8g2.begin();
   u8g2.clearBuffer();
   splashScreen();
+
+  randomSeed(analogRead(A7)); //unused pin for rando!
 
   pinMode(IR_PIN, INPUT);
   sensorEnabled = detectSensor();
