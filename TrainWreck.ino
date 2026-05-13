@@ -266,11 +266,11 @@ int maxSpeed() {
 }
 
 int dipSpeed() {
-  return max(50, (maxSpeed() * 26) / 100);
+  return max(50, (maxSpeed() * 32) / 100);
 }
 
 int dipSpeedFast() {
-  return max(dipSpeed() + 10, (maxSpeed() * 38) / 100);
+  return max(dipSpeed() + 10, (maxSpeed() * 46) / 100);
 }
 
 // -------- go! --------
@@ -701,12 +701,6 @@ void calibrateTrain() {
   draw();
   storedLapFwd = measureLap(true);
   if (abortRoute) { calibrating = false; return; }
-  sensorEnabled = false;
-  writeMotor(true, DOCKING_SPEED);
-  delay(1500);
-  writeMotor(true, 0);
-  delay(300);
-  sensorEnabled = true;
   storedLapRev = measureLap(false);
   if (abortRoute) { calibrating = false; return; }
 
@@ -829,7 +823,7 @@ const char dir_dtown[]   PROGMEM = "DOWNTOWN";
 const char dir_losang[]  PROGMEM = "LOS ANG";
 const char dir_edinb[]   PROGMEM = "EDINBURGH";
 const char dir_illinois[]PROGMEM = "ILLINOIS";
-const char dir_neworl[]  PROGMEM = "NEW ORL";
+const char dir_neworl[]  PROGMEM = "N'AWLINS";
 const char dir_cw[]      PROGMEM = "CLOCKWISE";
 const char dir_ccw[]     PROGMEM = "COUNTER CW";
 const char dir_newyork[] PROGMEM = "NEW YORK";
