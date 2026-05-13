@@ -43,14 +43,13 @@ const int STN4_PIN = A4;
 long stationDist = 1 * 60;
 bool calibrateAtStartup = true;
 bool testStationMode = false;
-const long STATION_EARLY_MS = 300;
 
 // -------- tuning ---------
 const int MAX_SPEED = 255;
 const int DOCKING_SPEED = 165;
 const int RAMP_STEP = 10;
 const int RAMP_MINUTES = 120;
-const float MAX_MPH = 72.0;
+const float MAX_MPH = 100.0;
 
 // ------- calibration ---------
 unsigned long snoozingMinutes = 20;
@@ -62,8 +61,6 @@ unsigned long stationTick = 0;
 long lastPos = 0;
 
 // ----- dip behavior -----
-const int DIP_SPEED = MAX_SPEED * 2.46 / 10;
-const int DIP_SPEED_FAST = MAX_SPEED * 3.88 / 10; 
 const unsigned long DIP_TIME = 9600;
 
 // -------- calibrate --------
@@ -111,13 +108,13 @@ char* perHourName() {
 }
 
 int speedToMph(int pwm) {
-  pwm = constrain(pwm, 0, MAX_SPEED);
-  return (pwm * MAX_MPH) / MAX_SPEED;
+  pwm = constrain(pwm, 0, maxSpeed());
+  return (pwm * MAX_MPH) / maxSpeed();
 }
 
 int speedToKph(int pwm) {
-  pwm = constrain(pwm, 0, MAX_SPEED);
-  return (pwm * MAX_MPH * 161) / (MAX_SPEED * 100);
+  pwm = constrain(pwm, 0, maxSpeed());
+  return (pwm * MAX_MPH * 161) / (maxSpeed() * 100);
 }
 
 Encoder speedKnob(CLK_PIN, DT_PIN);
@@ -262,6 +259,20 @@ void manualControlLoop() {
   stationArmed = false;
 }
 
+// -------- dip --------
+
+int maxSpeed() {
+  return constrain(MAX_SPEED, 128, 255);
+}
+
+int dipSpeed() {
+  return max(50, (maxSpeed() * 26) / 100);
+}
+
+int dipSpeedFast() {
+  return max(dipSpeed() + 10, (maxSpeed() * 38) / 100);
+}
+
 // -------- go! --------
 bool currentDirection = true;
 
@@ -285,7 +296,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
         updateStationLights();
         readEncoderStep();
       }
-      rampSpeed(random(DIP_SPEED, DIP_SPEED_FAST));
+      rampSpeed(random(dipSpeed(), dipSpeedFast()));
       long dipJitterPct = random(-20, 21);  // -20% to +20%
       unsigned long thisDipTime = (DIP_TIME * (100 + dipJitterPct)) / 100;
       unsigned long dipStartTime = millis();
@@ -320,7 +331,7 @@ void go(bool forward, int speed, unsigned long runTime, int dipCount) {
 
   rampSpeed(0);
   stateStartTime = millis();
-  unsigned long pauseMs = max(0L, (long)(pauseTime * 1000UL) - STATION_EARLY_MS);
+  unsigned long pauseMs = max(0L, (long)(pauseTime * 1000UL));
   while (millis() - stateStartTime < pauseMs) {
     if (abortRoute) return;
     snprintf(line3, sizeof(line3), "%s %ds", "AT STATION", pauseTime);
@@ -508,7 +519,7 @@ void updateStationLights() {
 
 // -------- motor --------
 void writeMotor(bool forward, int pwm) {
-  pwm = constrain(pwm, 0, MAX_SPEED);
+  pwm = constrain(pwm, 0, maxSpeed());
   globalCurrentSpeed = pwm;
   currentDirection = forward;
 
@@ -548,7 +559,8 @@ bool trainPassingIR(bool reset = false) {
   }
 
   if (!armed) {
-    baseline = (baseline * 7 + v) / 8;
+    int p = ((long)(baseline - v) * 100L) / baseline;
+    if (p < 8) baseline = (baseline * 7 + v) / 8;
     if (now - armStartMs >= 750) armed = true;
     return false;
   }
@@ -688,7 +700,15 @@ void calibrateTrain() {
   snprintf(line1, sizeof(line1), "CALIBRATE ENGINE");
   draw();
   storedLapFwd = measureLap(true);
+  if (abortRoute) { calibrating = false; return; }
+  sensorEnabled = false;
+  writeMotor(true, DOCKING_SPEED);
+  delay(1500);
+  writeMotor(true, 0);
+  delay(300);
+  sensorEnabled = true;
   storedLapRev = measureLap(false);
+  if (abortRoute) { calibrating = false; return; }
 
   Persist p;
   p.version = EEPROM_VERSION;
@@ -743,15 +763,16 @@ unsigned long measureLap(bool forward) {
 
   setDirection(forward);
   for (int s = 0; s <= DOCKING_SPEED; s += 6) {
+    if (abortRoute) { writeMotor(forward, 0); return 0; }
     globalCurrentSpeed = s;
     snprintf(line2, sizeof(line2), "%d %s", speedToMph(globalCurrentSpeed), perHourName());
-
     draw();
+    readEncoderStep();
     writeMotor(forward, s);
   }
 
   trainPassingIR(true);
-  while (!trainPassingIR()) { if (abortRoute) return 0; }
+  while (!trainPassingIR()) { if (abortRoute) return 0; readEncoderStep(); }
   snprintf(line3, sizeof(line3), "MARK");
   draw();
 
@@ -759,7 +780,7 @@ unsigned long measureLap(bool forward) {
 
   start = millis();
   trainPassingIR(true);
-  while (!trainPassingIR()) { if (abortRoute) return 0; }
+  while (!trainPassingIR()) { if (abortRoute) return 0; readEncoderStep(); }
 
   snprintf(line3, sizeof(line3), "SET");
   draw();
@@ -1014,9 +1035,9 @@ void runRoute(uint8_t index) {
   // -------- Equipment → speed --------
   uint16_t baseSpeed;
   switch (currentRoute.equipment) {
-    case BULLET: baseSpeed = MAX_SPEED; break;
-    case SHUTTLE: baseSpeed = MAX_SPEED * 0.95; break;
-    case FREIGHT: baseSpeed = MAX_SPEED * 0.85; break;
+    case BULLET: baseSpeed = maxSpeed(); break;
+    case SHUTTLE: baseSpeed = maxSpeed() * 0.95; break;
+    case FREIGHT: baseSpeed = maxSpeed() * 0.85; break;
   }
 
   // -------- Range → duration --------
@@ -1081,7 +1102,7 @@ void loop() {
 
   if (restartRequested) {
     restartRequested = false;
-    rampSpeed(MAX_SPEED);
+    rampSpeed(maxSpeed());
     runRoute(currentRouteIndex);
     return;
   }
