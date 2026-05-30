@@ -49,7 +49,7 @@ const int MAX_SPEED = 255;
 const int DOCKING_SPEED = 165;
 const int RAMP_STEP = 10;
 const int RAMP_MINUTES = 120;
-const float MAX_MPH = 100.0;
+const float MAX_MPH = 72;
 
 // ------- calibration ---------
 unsigned long snoozingMinutes = 20;
@@ -108,8 +108,12 @@ char* perHourName() {
 }
 
 int speedToMph(int pwm) {
-  pwm = constrain(pwm, 0, maxSpeed());
-  return (pwm * MAX_MPH) / maxSpeed();
+  int max = maxSpeed();
+
+  if (pwm < 0) pwm = 0;
+  if (pwm > max) pwm = max;
+
+  return ((long)pwm * MAX_MPH) / max;
 }
 
 int speedToKph(int pwm) {
@@ -165,6 +169,7 @@ static long delta = 0;
 
 void manualControlLoop() {
   snprintf(line3, sizeof(line3), "MANUAL CONTROL");
+  draw();
 
   static unsigned long snoozeTime = 0;
   snoozeTime = millis();  // seed on entry — prevent false snooze trigger
@@ -210,18 +215,9 @@ void manualControlLoop() {
       lastPos = pos;
       int prevSpeed = globalCurrentSpeed;
       delta = oldPos - pos;
-      int magnitude = abs(delta);
 
-      int step = 2;
-      if (magnitude > 1) step = 8;
-      if (magnitude > 2) step = 15;
-      if (magnitude > 3) step = 28;
-      if (magnitude > 4) step = 36;
-      if (magnitude > 5) step = 45;
-
-      if (delta != 0) {
-        globalCurrentSpeed += (delta > 0 ? step : -step);
-      }
+      globalCurrentSpeed += delta * 6;
+      if (delta < 0 && globalCurrentSpeed < 10) globalCurrentSpeed = 0;
 
       globalCurrentSpeed = constrain(globalCurrentSpeed, 0, 255);
 
@@ -610,7 +606,7 @@ void rampSpeed(int target) {
   updateTafficSignal((rampUp ? 1 : current), rampUp);
 
   unsigned long rampBlockStart = 0;
-  
+
   while (current != target) {
     if (abortRoute) return;
     if (target == 0 && current < (DOCKING_SPEED - 10)) {
@@ -662,10 +658,17 @@ void rampSpeed(int target) {
     if (target == 0) {
       updateTafficSignal(current, rampUp);
     } else {
+      // snprintf(line3, sizeof(line3), "BOO!");
+
+      int mph = speedToMph(target);
+      
+      const char* unit = perHourName();
+      char* ramp = rampUp ? "RAMP TO" : "DOWN TO";
+
       snprintf(line3, sizeof(line3), "%s %d %s",
-               rampUp ? "RAMP TO" : "DOWN TO",
-               speedToMph(target),
-               perHourName());
+               ramp,
+               mph,
+               unit);
     }
     if (targetDirty) {
       targetDirty = false;
@@ -676,6 +679,7 @@ void rampSpeed(int target) {
     }
     writeMotor(lastDirection, current);
     snprintf(line2, sizeof(line2), "%d %s", speedToMph(current), perHourName());
+    // Serial.println(line3);
     draw();
     updateStationLights();
     readEncoderStep();
@@ -700,9 +704,15 @@ void calibrateTrain() {
   snprintf(line1, sizeof(line1), "CALIBRATE ENGINE");
   draw();
   storedLapFwd = measureLap(true);
-  if (abortRoute) { calibrating = false; return; }
+  if (abortRoute) {
+    calibrating = false;
+    return;
+  }
   storedLapRev = measureLap(false);
-  if (abortRoute) { calibrating = false; return; }
+  if (abortRoute) {
+    calibrating = false;
+    return;
+  }
 
   Persist p;
   p.version = EEPROM_VERSION;
@@ -714,7 +724,7 @@ void calibrateTrain() {
 
   // Serial.print("FWD lap ms: "); Serial.println(storedLapFwd);
   // Serial.print("REV lap ms: "); Serial.println(storedLapRev);
-  if (storedLapFwd > 0)  {
+  if (storedLapFwd > 0) {
     // Serial.print("Train size: "); Serial.print(irDipDurationMs * 720UL / storedLapFwd); Serial.println(" cmin");
   }
   // Serial.print("FWD coast ms: "); Serial.println(calculateStationPause(true));
@@ -757,7 +767,10 @@ unsigned long measureLap(bool forward) {
 
   setDirection(forward);
   for (int s = 0; s <= DOCKING_SPEED; s += 6) {
-    if (abortRoute) { writeMotor(forward, 0); return 0; }
+    if (abortRoute) {
+      writeMotor(forward, 0);
+      return 0;
+    }
     globalCurrentSpeed = s;
     snprintf(line2, sizeof(line2), "%d %s", speedToMph(globalCurrentSpeed), perHourName());
     draw();
@@ -766,7 +779,10 @@ unsigned long measureLap(bool forward) {
   }
 
   trainPassingIR(true);
-  while (!trainPassingIR()) { if (abortRoute) return 0; readEncoderStep(); }
+  while (!trainPassingIR()) {
+    if (abortRoute) return 0;
+    readEncoderStep();
+  }
   snprintf(line3, sizeof(line3), "MARK");
   draw();
 
@@ -774,7 +790,10 @@ unsigned long measureLap(bool forward) {
 
   start = millis();
   trainPassingIR(true);
-  while (!trainPassingIR()) { if (abortRoute) return 0; readEncoderStep(); }
+  while (!trainPassingIR()) {
+    if (abortRoute) return 0;
+    readEncoderStep();
+  }
 
   snprintf(line3, sizeof(line3), "SET");
   draw();
@@ -793,49 +812,57 @@ unsigned long measureLap(bool forward) {
 
 
 // -------- route strings (PROGMEM) --------
-const char rt_pelham[]   PROGMEM = "Taking Pelham 123";
+const char rt_pelham[] PROGMEM = "Taking Pelham 123";
 const char rt_hogwarts[] PROGMEM = "Hogwarts Express";
-const char rt_zephyr[]   PROGMEM = "California Zephyr";
-const char rt_polar[]    PROGMEM = "The Polar Express";
-const char rt_orient[]   PROGMEM = "The Orient Express";
+const char rt_zephyr[] PROGMEM = "California Zephyr";
+const char rt_polar[] PROGMEM = "The Polar Express";
+const char rt_orient[] PROGMEM = "The Orient Express";
 const char rt_broadway[] PROGMEM = "Broadway Limited";
-const char rt_silver[]   PROGMEM = "The Silver Streak";
+const char rt_silver[] PROGMEM = "The Silver Streak";
 const char rt_scotsman[] PROGMEM = "Flying Scotsman";
-const char rt_cannon[]   PROGMEM = "Cannonball Express";
-const char rt_circle[]   PROGMEM = "The Circle Line";
-const char rt_empire[]   PROGMEM = "Empire State Exp";
-const char rt_ghan[]     PROGMEM = "The Great Ghan";
-const char rt_century[]  PROGMEM = "20th Century Ltd";
-const char rt_thomas[]   PROGMEM = "Thomas & Friends";
+const char rt_cannon[] PROGMEM = "Cannonball Express";
+const char rt_circle[] PROGMEM = "The Circle Line";
+const char rt_empire[] PROGMEM = "Empire State Exp";
+const char rt_ghan[] PROGMEM = "The Great Ghan";
+const char rt_century[] PROGMEM = "20th Century Ltd";
+const char rt_thomas[] PROGMEM = "Thomas & Friends";
 
-const char dir_pelbay[]  PROGMEM = "UPTOWN";
-const char dir_sferry[]  PROGMEM = "DOWNTOWN";
-const char dir_hogs[]    PROGMEM = "HOGSMEADE";
-const char dir_london[]  PROGMEM = "LONDON";
+const char dir_pelbay[] PROGMEM = "UPTOWN";
+const char dir_sferry[] PROGMEM = "DOWNTOWN";
+const char dir_hogs[] PROGMEM = "HOGSMEADE";
+const char dir_london[] PROGMEM = "LONDON";
 const char dir_sanfran[] PROGMEM = "SAN FRAN";
 const char dir_chicago[] PROGMEM = "CHICAGO";
-const char dir_north[]   PROGMEM = "NORTHBOUND";
-const char dir_south[]   PROGMEM = "SOUTHBOUND";
-const char dir_istanbul[]PROGMEM = "ISTANBUL";
-const char dir_paris[]   PROGMEM = "PARIS";
-const char dir_bronx[]   PROGMEM = "THE BRONX";
-const char dir_dtown[]   PROGMEM = "DOWNTOWN";
-const char dir_losang[]  PROGMEM = "LOS ANG";
-const char dir_edinb[]   PROGMEM = "EDINBURGH";
-const char dir_illinois[]PROGMEM = "ILLINOIS";
-const char dir_neworl[]  PROGMEM = "N'AWLINS";
-const char dir_cw[]      PROGMEM = "CLOCKWISE";
-const char dir_ccw[]     PROGMEM = "COUNTER CW";
+const char dir_north[] PROGMEM = "NORTHBOUND";
+const char dir_south[] PROGMEM = "SOUTHBOUND";
+const char dir_istanbul[] PROGMEM = "ISTANBUL";
+const char dir_paris[] PROGMEM = "PARIS";
+const char dir_bronx[] PROGMEM = "THE BRONX";
+const char dir_dtown[] PROGMEM = "DOWNTOWN";
+const char dir_losang[] PROGMEM = "LOS ANG";
+const char dir_edinb[] PROGMEM = "EDINBURGH";
+const char dir_illinois[] PROGMEM = "ILLINOIS";
+const char dir_neworl[] PROGMEM = "N'AWLINS";
+const char dir_cw[] PROGMEM = "CLOCKWISE";
+const char dir_ccw[] PROGMEM = "COUNTER CW";
 const char dir_newyork[] PROGMEM = "NEW YORK";
-const char dir_adelaide[]PROGMEM = "ADELAIDE";
-const char dir_darwin[]  PROGMEM = "DARWIN";
-const char dir_knapford[]PROGMEM = "KNAPFORD";
-const char dir_farquhar[]PROGMEM = "FARQUHAR";
+const char dir_adelaide[] PROGMEM = "ADELAIDE";
+const char dir_darwin[] PROGMEM = "DARWIN";
+const char dir_knapford[] PROGMEM = "KNAPFORD";
+const char dir_farquhar[] PROGMEM = "FARQUHAR";
 
-enum Schedule { HIGH_FREQ, PEAK, OFF_PEAK };
-enum Equipment { BULLET, SHUTTLE, FREIGHT };
-enum Service { NONSTOP, LIMITED, UNPREDICTABLE };
-enum Range { LOCAL, SHORT_RUN, LONG_HAUL };
+enum Schedule { HIGH_FREQ,
+                PEAK,
+                OFF_PEAK };
+enum Equipment { BULLET,
+                 SHUTTLE,
+                 FREIGHT };
+enum Service { NONSTOP,
+               LIMITED,
+               UNPREDICTABLE };
+enum Range { LOCAL,
+             SHORT_RUN,
+             LONG_HAUL };
 
 struct RouteProfile {
   PGM_P title;
@@ -850,20 +877,20 @@ struct RouteProfile {
 // Each route is self-contained — reorder freely, nothing will break.
 // Pelham is first so it runs first (easy test: should show UPTOWN/DOWNTOWN, not Hogsmeade).
 const RouteProfile ROUTE_DEFAULTS[] PROGMEM = {
-  { rt_pelham,   dir_pelbay,  dir_sferry,  HIGH_FREQ, BULLET,  NONSTOP,       LOCAL     },
-  { rt_hogwarts, dir_hogs,    dir_london,  HIGH_FREQ, BULLET,  NONSTOP,       LONG_HAUL },
-  { rt_zephyr,   dir_sanfran, dir_chicago, PEAK,      BULLET,  LIMITED,       LONG_HAUL },
-  { rt_polar,    dir_north,   dir_south,   OFF_PEAK,  SHUTTLE, UNPREDICTABLE, LONG_HAUL },
-  { rt_orient,   dir_istanbul,dir_paris,   OFF_PEAK,  BULLET,  NONSTOP,       LONG_HAUL },
-  { rt_broadway, dir_bronx,   dir_dtown,   OFF_PEAK,  BULLET,  LIMITED,       LONG_HAUL },
-  { rt_silver,   dir_losang,  dir_chicago, HIGH_FREQ, BULLET,  UNPREDICTABLE, SHORT_RUN },
-  { rt_scotsman, dir_edinb,   dir_london,  OFF_PEAK,  BULLET,  NONSTOP,       LONG_HAUL },
-  { rt_cannon,   dir_illinois,dir_neworl,  PEAK,      BULLET,  UNPREDICTABLE, SHORT_RUN },
-  { rt_circle,   dir_cw,      dir_ccw,     HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL     },
-  { rt_empire,   dir_chicago, dir_newyork, PEAK,      BULLET,  NONSTOP,       LONG_HAUL },
-  { rt_ghan,     dir_adelaide,dir_darwin,  HIGH_FREQ, SHUTTLE, LIMITED,       LONG_HAUL },
-  { rt_century,  dir_chicago, dir_newyork, PEAK,      BULLET,  NONSTOP,       LONG_HAUL },
-  { rt_thomas,   dir_knapford,dir_farquhar,HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL     },
+  { rt_pelham, dir_pelbay, dir_sferry, HIGH_FREQ, BULLET, NONSTOP, LOCAL },
+  { rt_hogwarts, dir_hogs, dir_london, HIGH_FREQ, BULLET, NONSTOP, LONG_HAUL },
+  { rt_zephyr, dir_sanfran, dir_chicago, PEAK, BULLET, LIMITED, LONG_HAUL },
+  { rt_polar, dir_north, dir_south, OFF_PEAK, SHUTTLE, UNPREDICTABLE, LONG_HAUL },
+  { rt_orient, dir_istanbul, dir_paris, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },
+  { rt_broadway, dir_bronx, dir_dtown, OFF_PEAK, BULLET, LIMITED, LONG_HAUL },
+  { rt_silver, dir_losang, dir_chicago, HIGH_FREQ, BULLET, UNPREDICTABLE, SHORT_RUN },
+  { rt_scotsman, dir_edinb, dir_london, OFF_PEAK, BULLET, NONSTOP, LONG_HAUL },
+  { rt_cannon, dir_illinois, dir_neworl, PEAK, BULLET, UNPREDICTABLE, SHORT_RUN },
+  { rt_circle, dir_cw, dir_ccw, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL },
+  { rt_empire, dir_chicago, dir_newyork, PEAK, BULLET, NONSTOP, LONG_HAUL },
+  { rt_ghan, dir_adelaide, dir_darwin, HIGH_FREQ, SHUTTLE, LIMITED, LONG_HAUL },
+  { rt_century, dir_chicago, dir_newyork, PEAK, BULLET, NONSTOP, LONG_HAUL },
+  { rt_thomas, dir_knapford, dir_farquhar, HIGH_FREQ, SHUTTLE, UNPREDICTABLE, LOCAL },
 };
 const int ROUTE_COUNT = sizeof(ROUTE_DEFAULTS) / sizeof(ROUTE_DEFAULTS[0]);
 
@@ -907,7 +934,7 @@ void setup() {
   u8g2.clearBuffer();
   splashScreen();
 
-  randomSeed(analogRead(A7)); //unused pin for rando!
+  randomSeed(analogRead(A7));  //unused pin for rando!
 
   pinMode(IR_PIN, INPUT);
   sensorEnabled = detectSensor();
@@ -1071,7 +1098,9 @@ void testStationLoop() {
     while (millis() - t < 1200) {
       if (abortRoute) return;
       snprintf(line3, sizeof(line3), "DEPARTING %d", lap);
-      draw(); updateStationLights(); readEncoderStep();
+      draw();
+      updateStationLights();
+      readEncoderStep();
     }
     rampSpeed(0);
     setStationState(AT_STATION);
@@ -1079,7 +1108,9 @@ void testStationLoop() {
     while (millis() - t < 3000) {
       if (abortRoute) return;
       snprintf(line3, sizeof(line3), "AT STATION %d", lap);
-      draw(); updateStationLights(); readEncoderStep();
+      draw();
+      updateStationLights();
+      readEncoderStep();
     }
     setStationState(DEPARTING);
     lastDirection = !lastDirection;
